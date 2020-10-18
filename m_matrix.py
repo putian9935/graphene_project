@@ -163,7 +163,7 @@ def prop2pR(Nt, N, xi_R, hat_U):
 
 
 def m_matrix(Nt, N, hat_t, hat_U, xi_L, xi_R):
-    return prop2I(Nt, N, hat_t, hat_U) + prop2sigma1(Nt, N, hat_t, hat_U)  + prop2sigma2(Nt, N, hat_t, hat_U) + prop2pL(Nt, N, xi_L, hat_U) + prop2pR(Nt, N, xi_R, hat_U)
+    return (prop2I(Nt, N, hat_t, hat_U) + prop2sigma1(Nt, N, hat_t, hat_U)  + prop2sigma2(Nt, N, hat_t, hat_U) + prop2pL(Nt, N, xi_L, hat_U) + prop2pR(Nt, N, xi_R, hat_U)).tocsr()
     
 
 if __name__ == '__main__':

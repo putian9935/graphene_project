@@ -26,7 +26,7 @@ class Trajectory():
         # divide by sqrt(2) since eta does not follow standard gaussian 
         self.phi.append(self.m_mat @ np.random.randn(self.half_size * 2) / 2 ** .5)
     
-    def evolve(self, time_step=0.01, max_steps=30, max_epochs=100):
+    def evolve(self, time_step=0.1, max_steps=10, max_epochs=20):
         """ 
         Evolve using leapfrog algorithm introduced on page 28;
         After this function call, self will be equipped with M matrix.
@@ -84,6 +84,7 @@ class Trajectory():
             
             # two components of xi, phi are independent, 
             # so it's cool to accept one update while rejecting another
+            if h_end < h_start: continue
             if np.random.random() > np.exp(-h_end + h_start):
                 self.xi = prev_xi  
                     
@@ -102,13 +103,15 @@ class Solution():  # cannot bear passing same arguments, use class instead
         self.trajs = []
 
         for _ in tqdm(range(self.max_trajs)): 
-            self.trajs.append(Trajectory(self.Nt, self.N, self.hat_t, self.hat_U).evolve())
+            self.trajs.append(Trajectory(self.Nt, self.N, self.hat_t, self.hat_U))
+            self.trajs[-1].evolve()
     
 
     def two_point_aa(self):
         ''' Calc observables via eq. (246) ''' 
+        print(self.trajs)
         ret = np.zeros((self.Nt - 1,self.N, self.N))  # a function of R and tau
-        for traj in tqdm(self.trajs):
+        for traj in self.trajs:
             inv_mat = inv(traj.m_mat)
             
             for tau in range(self.Nt-1):
@@ -125,11 +128,11 @@ def show_plot(results):
     import matplotlib.pyplot as plt
     for i, res in enumerate(results):
         plt.imshow(res) 
-        plt.savefig('%d.png', )
+        plt.savefig('%d.png' % i, )
 
 
 
 if __name__ == '__main__':
-    sol = Solution(2,2,2,3)
+    sol = Solution(20,20,1,1.5)
     show_plot(sol.two_point_aa())
 
