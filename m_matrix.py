@@ -76,18 +76,6 @@ def m_matrix_same4all(Nt, N, hat_t, hat_U):
 if __name__ == '__main__':
     # N = Nt = 2 is complicated enough for human eye
     
-
-    import cProfile, pstats, io
-    pr = cProfile.Profile()
-    pr.enable()
-    for _ in range(4000):
-        m_matrix_xi(2,2,3,np.random.randn(16))
-    pr.disable()
-    s = io.StringIO()
-    sortby = 'cumulative'
-    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-    ps.print_stats()
-    print(s.getvalue())
-        
+    m_matrix_xi(4,2,3,np.random.randn(32))
     
 

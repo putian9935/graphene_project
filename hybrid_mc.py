@@ -11,11 +11,13 @@ Jobs done:
 
 import numpy as np 
 from m_matrix import tau_n2ind, m_matrix_same4all, m_matrix_xi
-from scipy.sparse.linalg import spsolve, inv
+from scipy.sparse.linalg import spsolve, inv, cg, cgs, gcrotmk
 from scipy import sparse
 from tqdm import tqdm
 
 np.random.seed(42)  # fix seed for reproductibility 
+
+spsolve = lambda *_: gcrotmk(*_)[0]
 
 class Trajectory():
     """
@@ -24,11 +26,12 @@ class Trajectory():
     tot_updates = 0 # statistics on rej rate
     rej_updates = 0
     delta_ham = []
-    def __init__(self, Nt, N, hat_t, hat_U):
+    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=200):
         self.N, self.Nt, self.half_size = N, Nt, N*N*Nt
         self.hat_t, self.hat_U = hat_t, hat_U
         self.xi = np.random.randn(N*N*Nt*2)
         self.xis = []
+        self.max_epochs = max_epochs
 
     def _generate_phi(self):
         ''' Generate phi vector according to eq. (163) '''
@@ -42,7 +45,7 @@ class Trajectory():
        
     
     
-    def evolve(self, time_step=0.005, max_steps=10, max_epochs=400):
+    def evolve(self, time_step=0.05, max_steps=10):
         """ 
         Evolve using leapfrog algorithm introduced on page 28;
         After this function call, self will be equipped with M matrix.
@@ -53,9 +56,10 @@ class Trajectory():
         def force(): 
             ''' calc the force according to eq. (221), with two chiral indices combined '''
             self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
-            self.f_mat = self.m_mat @ self.m_mat.T
+            # self.f_mat = self.m_mat @ self.m_mat.T
+            self.f_mat = (lambda _: _ @ _.T)(self.m_mat)
 
-            ret = np.zeros_like(self.xi) 
+            ret = -self.xi
             for phi in self.phi:
                 x = spsolve(self.f_mat, phi) 
                 y = self.m_mat.T @ x  # can't figure out why need a transpose here, but it worked! 
@@ -68,22 +72,31 @@ class Trajectory():
             ''' calc the hamiltonian according to eq. (219), without the sum of alpha '''
             nonlocal pi
             # f_mat is always updated before calcing hamiltonian
-            return  sum(phi@spsolve(self.f_mat, phi) for phi in self.phi)
+            return  .5*(pi@pi+self.xi@self.xi)+sum(phi@spsolve(self.f_mat, phi) for phi in self.phi)
 
 
         def leapfrog():
             ''' the leapfrog algorithm ''' 
             nonlocal pi
-            pi -= force() * (time_step / 2)
+            pi += force() * (time_step / 2)
             for _ in range(max_steps - 1):
                 self.xi += pi * time_step 
-                pi -= force() * time_step
+                pi += force() * time_step
             self.xi += pi * time_step 
-            pi -= force() * (time_step / 2)
+            pi += force() * (time_step / 2)
+
+        
+        def one_step_leapfrog():
+            ''' the leapfrog algorithm ''' 
+            nonlocal pi
+            pi += force() * (time_step / 2)
+            self.xi += pi * time_step 
+            pi += force() * (time_step / 2)
+
 
         self._generate_phi()
         tmp_ham = []
-        for epoch in tqdm(range(max_epochs)):
+        for epoch in tqdm(range(self.max_epochs)):
             prev_xi = self.xi.copy()  # make a copy of previous state in case hamiltonian gets bad 
 
             pi = np.random.randn(self.half_size * 2)  # random momenta
@@ -91,7 +104,7 @@ class Trajectory():
             h_start = hamiltonian()  # record the hamiltonian at the beginning
 
             # launch leapfrog algorithm
-            leapfrog()
+            one_step_leapfrog()
 
             h_end = hamiltonian()  # record the hamiltonian at the end
             
@@ -121,7 +134,7 @@ class TestCorrectness(Trajectory):
             self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
             self.f_mat = self.m_mat @ self.m_mat.T
 
-            ret = np.zeros_like(self.xi) 
+            ret = -self.xi
             for phi in self.phi:
                 x = spsolve(self.f_mat, phi) 
                 y = self.m_mat.T @ x
@@ -138,7 +151,7 @@ class TestCorrectness(Trajectory):
             
             self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
             self.f_mat = self.m_mat @ self.m_mat.T
-            return  sum(phi@spsolve(self.f_mat, phi) for phi in self.phi)
+            return  .5*(pi@pi+self.xi@self.xi)+sum(phi@spsolve(self.f_mat, phi) for phi in self.phi)
 
 
         self._generate_phi()
@@ -153,7 +166,7 @@ class TestCorrectness(Trajectory):
         f = force()
 
         # perturbation = np.random.randn(self.half_size * 2) / 1e5  
-        perturbation = np.array([1e-7] + [0] *(self.half_size*2-1))
+        perturbation = np.array([1e-3] + [0] *(self.half_size*2-1))
         self.xi += perturbation 
 
         h_perturbed = hamiltonian() 
@@ -176,9 +189,12 @@ class Solution():  # cannot bear passing same arguments, use class instead
         self.traj.evolve()
     
 
-    def two_point_aa(self, burnin=200):
+    def two_point_aa(self, burnin=None):
         ''' Calc observables via eq. (246) ''' 
         
+        if not burnin: 
+            burnin = self.traj.max_epochs // 2 
+
         print('Doing statistics...')
         ret = np.zeros((self.Nt - 1,self.N, self.N))  # a function of R and tau
 
@@ -202,10 +218,8 @@ def show_plot(results):
         plt.savefig('%d.png' % i, )
 
 
-
 if __name__ == '__main__':
-    # TestCorrectness(2,2,1,4)
-    sol = Solution(8,4,2,1)
+    sol = Solution(8,2,2e-1,1e-3)
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
     print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
 
