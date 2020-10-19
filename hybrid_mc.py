@@ -1,5 +1,16 @@
+__doc__ = """
+HMC described in (217). 
+
+==================
+Jobs done:
+1. Sanity check on hamiltonian derivative;
+
+2. Save fixed part M matrix for acceleration;
+
+"""
+
 import numpy as np 
-from m_matrix import tau_n2ind, m_matrix_same4all, m_matrix_xi 
+from m_matrix import tau_n2ind, m_matrix_same4all, m_matrix_xi
 from scipy.sparse.linalg import spsolve, inv
 from scipy import sparse
 from tqdm import tqdm
@@ -17,6 +28,7 @@ class Trajectory():
         self.N, self.Nt, self.half_size = N, Nt, N*N*Nt
         self.hat_t, self.hat_U = hat_t, hat_U
         self.xi = np.random.randn(N*N*Nt*2)
+        self.xis = []
 
     def _generate_phi(self):
         ''' Generate phi vector according to eq. (163) '''
@@ -30,7 +42,7 @@ class Trajectory():
        
     
     
-    def evolve(self, time_step=0.005, max_steps=10, max_epochs=200):
+    def evolve(self, time_step=0.005, max_steps=10, max_epochs=400):
         """ 
         Evolve using leapfrog algorithm introduced on page 28;
         After this function call, self will be equipped with M matrix.
@@ -89,11 +101,13 @@ class Trajectory():
             Trajectory.tot_updates += 1
             tmp_ham.append(['acc', h_end-h_start])
             if h_end < h_start: # exp might overflow
+                self.xis.append(self.xi)
                 continue
             if np.random.random() > np.exp(-h_end + h_start):
                 self.xi = prev_xi  
                 Trajectory.rej_updates += 1
                 tmp_ham[-1][0]='rej'
+            self.xis.append(self.xi)
                 
         Trajectory.delta_ham.append(tmp_ham)
 
@@ -149,8 +163,6 @@ class TestCorrectness(Trajectory):
         print('Delta H computed using derivative: ', -perturbation @ f)
         
 
-    
-
 class Solution():  # cannot bear passing same arguments, use class instead
     def __init__(self, Nt, N, hat_t, hat_U):
         self.N, self.Nt = N, Nt
@@ -164,20 +176,22 @@ class Solution():  # cannot bear passing same arguments, use class instead
         self.traj.evolve()
     
 
-    def two_point_aa(self):
+    def two_point_aa(self, burnin=200):
         ''' Calc observables via eq. (246) ''' 
         
+        print('Doing statistics...')
         ret = np.zeros((self.Nt - 1,self.N, self.N))  # a function of R and tau
 
-        inv_mat = inv(self.traj.m_mat)
-        
-        for tau in range(self.Nt-1):
-            for n1 in range(self.N):
-                for n2 in range(self.N):
-                    indr = tau_n2ind(tau+1, n1, n2, self.N) 
-                    ind0 = tau_n2ind(tau, 0, 0, self.N) 
-                    ret[tau, n1, n2,] += inv_mat[indr, ind0] ** 2 
-        ret /= len(self.traj) 
+        for xi in tqdm(self.traj.xis[burnin:]):
+            inv_mat = inv(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
+            
+            for tau in range(self.Nt-1):
+                for n1 in range(self.N):
+                    for n2 in range(self.N):
+                        indr = tau_n2ind(tau+1, n1, n2, self.N) 
+                        ind0 = tau_n2ind(tau, 0, 0, self.N) 
+                        ret[tau, n1, n2,] += inv_mat[indr, ind0] ** 2 
+            ret /= len(self.traj.xis) 
         return ret
 
 
@@ -190,7 +204,9 @@ def show_plot(results):
 
 
 if __name__ == '__main__':
-    TestCorrectness(2,2,1,4)
-    sol = Solution(2,2,1,4)
+    # TestCorrectness(2,2,1,4)
+    sol = Solution(8,4,2,1)
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
     print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
+
+    show_plot(sol.two_point_aa())
