@@ -7,17 +7,18 @@ Jobs done:
 
 2. Save fixed part M matrix for acceleration;
 
+3. Fix wrong leapfrog (sign before force term); 
 """
 
 import numpy as np 
 from m_matrix import tau_n2ind, m_matrix_same4all, m_matrix_xi
-from scipy.sparse.linalg import spsolve, inv, cg, cgs, gcrotmk
+from scipy.sparse.linalg import spsolve, inv, cg, cgs, gcrotmk, splu
 from scipy import sparse
 from tqdm import tqdm
 
 np.random.seed(42)  # fix seed for reproductibility 
 
-spsolve = lambda *_: gcrotmk(*_)[0]
+# spsolve = lambda *_: gcrotmk(*_)[0]
 
 class Trajectory():
     """
@@ -26,7 +27,7 @@ class Trajectory():
     tot_updates = 0 # statistics on rej rate
     rej_updates = 0
     delta_ham = []
-    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=200):
+    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400):
         self.N, self.Nt, self.half_size = N, Nt, N*N*Nt
         self.hat_t, self.hat_U = hat_t, hat_U
         self.xi = np.random.randn(N*N*Nt*2)
@@ -37,15 +38,21 @@ class Trajectory():
         ''' Generate phi vector according to eq. (163) '''
         self.phi = []  # make a list for good iteration
         self.m_mat_indep = m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,)
+
+        # Few necessary initialization
         self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
         self.f_mat = self.m_mat @ self.m_mat.T
+        self.xs = []
+        for phi in self.phi:
+            self.xs.append(spsolve(self.f_mat, phi))
 
         # divide by sqrt(2) since eta does not follow standard gaussian 
         self.phi.append(self.m_mat @ np.random.randn(self.half_size * 2) / 2 ** .5)
+
        
     
     
-    def evolve(self, time_step=0.05, max_steps=10):
+    def evolve(self, time_step=.5, max_steps=10):
         """ 
         Evolve using leapfrog algorithm introduced on page 28;
         After this function call, self will be equipped with M matrix.
@@ -56,14 +63,15 @@ class Trajectory():
         def force(): 
             ''' calc the force according to eq. (221), with two chiral indices combined '''
             self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
-            # self.f_mat = self.m_mat @ self.m_mat.T
-            self.f_mat = (lambda _: _ @ _.T)(self.m_mat)
+            self.f_mat = self.m_mat @ self.m_mat.T
+            self.xs = []
 
             ret = -self.xi
+            solver = splu(self.f_mat)
             for phi in self.phi:
-                x = spsolve(self.f_mat, phi) 
-                y = self.m_mat.T @ x  # can't figure out why need a transpose here, but it worked! 
-                ret += 2 * self.hat_U **.5 * (x * y) # trace is too fancy, simply an element-wise product 
+                self.xs.append(solver.solve(phi))
+                y = self.m_mat.T @ self.xs[-1]  # can't figure out why need a transpose here, but it worked! 
+                ret += 2 * self.hat_U **.5 * (self.xs[-1] * y) # trace is too fancy, simply an element-wise product 
 
             return ret
 
@@ -72,7 +80,7 @@ class Trajectory():
             ''' calc the hamiltonian according to eq. (219), without the sum of alpha '''
             nonlocal pi
             # f_mat is always updated before calcing hamiltonian
-            return  .5*(pi@pi+self.xi@self.xi)+sum(phi@spsolve(self.f_mat, phi) for phi in self.phi)
+            return  .5*(pi@pi+self.xi@self.xi)+sum(phi@x for x, phi in zip(self.xs, self.phi))
 
 
         def leapfrog():
@@ -214,12 +222,12 @@ class Solution():  # cannot bear passing same arguments, use class instead
 def show_plot(results):
     import matplotlib.pyplot as plt
     for i, res in enumerate(results):
-        plt.imshow(res) 
+        plt.matshow(res) 
         plt.savefig('%d.png' % i, )
 
 
 if __name__ == '__main__':
-    sol = Solution(8,2,2e-1,1e-3)
+    sol = Solution(8,4,1,1e-2, )
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
     print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
 
