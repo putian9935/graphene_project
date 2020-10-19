@@ -198,7 +198,11 @@ class Solution():  # cannot bear passing same arguments, use class instead
     
 
     def two_point_aa(self, burnin=None):
-        ''' Calc observables via eq. (246) ''' 
+        """ 
+        Calc observables via eq. (246)
+
+        As Feng mentioned, NEVER use matrix inverse unless you have a good reason. Following code uses cached solver to speedup solution. 
+        """
         
         if not burnin: 
             burnin = self.traj.max_epochs // 2 
@@ -206,15 +210,19 @@ class Solution():  # cannot bear passing same arguments, use class instead
         print('Doing statistics...')
         ret = np.zeros((self.Nt - 1,self.N, self.N))  # a function of R and tau
 
+        buf = np.zeros(self.N*self.N*self.Nt*2)
         for xi in tqdm(self.traj.xis[burnin:]):
-            inv_mat = inv(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
-            
+            inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
             for tau in range(self.Nt-1):
                 for n1 in range(self.N):
                     for n2 in range(self.N):
                         indr = tau_n2ind(tau+1, n1, n2, self.N) 
                         ind0 = tau_n2ind(tau, 0, 0, self.N) 
-                        ret[tau, n1, n2,] += inv_mat[indr, ind0] ** 2 
+                        
+
+                        buf[ind0] = 1
+                        ret[tau, n1, n2,] += inv_solver.solve(buf)[indr] ** 2
+                        buf[ind0] = 0
             ret /= len(self.traj.xis) 
         return ret
 
@@ -228,6 +236,9 @@ def show_plot(results):
 
 if __name__ == '__main__':
     sol = Solution(8,4,1,1e-2, )
+
+    # sol.two_point_aa()
+    # exit()
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
     print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
 
