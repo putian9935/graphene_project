@@ -12,7 +12,7 @@ Jobs done:
 
 import numpy as np 
 from m_matrix import tau_n2ind, m_matrix_same4all, m_matrix_xi
-from scipy.sparse.linalg import spsolve, inv, cg, cgs, gcrotmk, splu
+from scipy.sparse.linalg import spsolve, inv, cg, cgs, gcrotmk, splu, bicg, bicgstab, gmres, lgmres, minres, qmr
 from scipy import sparse
 from tqdm import tqdm
 
@@ -67,9 +67,21 @@ class Trajectory():
             self.xs = []
 
             ret = -self.xi
-            solver = splu(self.f_mat)
+
+            """
+            # Benchmarking different method
+            import time
+            print('start_solving')
+            for func in [cg, cgs, gcrotmk, bicg, bicgstab, gmres, lgmres, minres, qmr]:
+                tt = time.clock()
+                func(self.f_mat, self.phi[0])
+                print('%s: %.3f'%(func.__name__, time.clock()-tt))
+            input('Finished')
+            exit()
+            """
+
             for phi in self.phi:
-                self.xs.append(solver.solve(phi))
+                self.xs.append(minres(self.f_mat,phi)[0])
                 y = self.m_mat.T @ self.xs[-1]  # can't figure out why need a transpose here, but it worked! 
                 ret += 2 * self.hat_U **.5 * (self.xs[-1] * y) # trace is too fancy, simply an element-wise product 
 
@@ -270,7 +282,7 @@ def show_plot(results):
 
 
 if __name__ == '__main__':
-    sol = Solution(8,2,1,1e-2, max_epochs=4000)
+    sol = Solution(50,10,1,1e-2, max_epochs=4000)
 
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
     # print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
