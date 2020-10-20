@@ -52,7 +52,7 @@ class Trajectory():
        
     
     
-    def evolve(self, time_step=.5, max_steps=10):
+    def evolve(self, time_step=.8, max_steps=10):
         """ 
         Evolve using leapfrog algorithm introduced on page 28;
         After this function call, self will be equipped with M matrix.
@@ -90,10 +90,24 @@ class Trajectory():
             for _ in range(max_steps - 1):
                 self.xi += pi * time_step 
                 pi += force() * time_step
+                self.xi += pi * time_step 
+                pi += force() * time_step
             self.xi += pi * time_step 
             pi += force() * (time_step / 2)
 
         
+        def few_step_leapfrog():
+            ''' the leapfrog algorithm ''' 
+            nonlocal pi
+            pi += force() * (time_step / 2)
+            self.xi += pi * time_step 
+            pi += force() * time_step
+            self.xi += pi * time_step 
+            pi += force() * time_step
+            self.xi += pi * time_step 
+            pi += force() * (time_step / 2)
+
+
         def one_step_leapfrog():
             ''' the leapfrog algorithm ''' 
             nonlocal pi
@@ -232,12 +246,16 @@ class Solution():  # cannot bear passing same arguments, use class instead
         if not burnin: 
             burnin = self.traj.max_epochs // 2 
         if not mapping_func:
-          mapping_func = lambda _: _
+          mapping_func = lambda _: _  
+
         print('Calculating Auto-correlation...')
         
-    
-        import tidynamics 
-        self.acf = tidynamics.acf([mapping_func(xi) for xi in self.traj.xis[burnin:]])
+        import tidynamics  # a very good library that calc acf 
+        x = np.array([mapping_func(xi) for xi in self.traj.xis[burnin:]])  # apply the mapping function
+        
+        self.acf = tidynamics.acf(x-x.mean(0))  # subtract mean from sample
+        self.acf /= self.acf[0]  # normalize the result         
+        
         print('Done! ')
        
        
@@ -252,7 +270,7 @@ def show_plot(results):
 
 
 if __name__ == '__main__':
-    sol = Solution(8,4,1,1e-2, max_epochs=4000)
+    sol = Solution(8,2,1,1e-2, max_epochs=4000)
 
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
     # print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
@@ -260,15 +278,22 @@ if __name__ == '__main__':
     # show_plot(sol.two_point_aa())
 
     import matplotlib.pyplot as plt 
+    
     sol.calc_auto_correlation(mapping_func=lambda _: _)
     plt.figure(figsize=(8,6))
     plt.plot(sol.acf) 
     plt.title(r'Mapping function: lambda _: _')
     
-
+    
     sol.calc_auto_correlation(mapping_func=lambda _: _@_)
     plt.figure(figsize=(8,6))
     plt.plot(sol.acf) 
     plt.title(r'Mapping function: lambda _: _@_')
+    plt.show()
+    
+    sol.calc_auto_correlation(mapping_func=lambda _: _[0])
+    plt.figure(figsize=(8,6))
+    plt.plot(sol.acf) 
+    plt.title(r'Mapping function: lambda _: _[0]')
     plt.show()
     # plt.savefig('autocorrelation.png')
