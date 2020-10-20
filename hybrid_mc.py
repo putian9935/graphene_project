@@ -191,6 +191,7 @@ class Solution():  # cannot bear passing same arguments, use class instead
 
         self._generate_trajectories()
 
+
     def _generate_trajectories(self):
         ''' Generate trajectories using HMC ''' 
         self.traj = Trajectory(self.Nt, self.N, self.hat_t, self.hat_U)
@@ -226,6 +227,19 @@ class Solution():  # cannot bear passing same arguments, use class instead
         return ret
 
 
+    def calc_auto_correlation(self, burnin=None):
+        ''' Calc auto-correlation function of xi's ''' 
+        if not burnin: 
+            burnin = self.traj.max_epochs // 2 
+
+        print('Calculating Auto-correlation...')
+        
+        import tidynamics 
+        self.acf = tidynamics.acf(self.traj.xis[burnin:])
+        
+       
+
+
 def show_plot(results):
     import matplotlib.pyplot as plt
     for i, res in enumerate(results):
@@ -236,9 +250,13 @@ def show_plot(results):
 if __name__ == '__main__':
     sol = Solution(8,4,1,1e-2, )
 
-    # sol.two_point_aa()
-    # exit()
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
     print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
 
     show_plot(sol.two_point_aa())
+
+    sol.calc_auto_correlation()
+    import matplotlib.pyplot as plt 
+    plt.plot(sol.acf) 
+    plt.savefig('autocorrelation.png')
+    
