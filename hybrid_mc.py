@@ -185,16 +185,16 @@ class TestCorrectness(Trajectory):
         
 
 class Solution():  # cannot bear passing same arguments, use class instead
-    def __init__(self, Nt, N, hat_t, hat_U):
+    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400):
         self.N, self.Nt = N, Nt
         self.hat_t, self.hat_U = hat_t, hat_U 
+        
+        self._generate_trajectories(max_epochs)
 
-        self._generate_trajectories()
 
-
-    def _generate_trajectories(self):
+    def _generate_trajectories(self, max_epochs):
         ''' Generate trajectories using HMC ''' 
-        self.traj = Trajectory(self.Nt, self.N, self.hat_t, self.hat_U)
+        self.traj = Trajectory(self.Nt, self.N, self.hat_t, self.hat_U, max_epochs)
         self.traj.evolve()
     
 
@@ -227,16 +227,20 @@ class Solution():  # cannot bear passing same arguments, use class instead
         return ret
 
 
-    def calc_auto_correlation(self, burnin=None):
+    def calc_auto_correlation(self, mapping_func=None, burnin=None):
         ''' Calc auto-correlation function of xi's ''' 
         if not burnin: 
             burnin = self.traj.max_epochs // 2 
-
+        if not mapping_func:
+          mapping_func = lambda _: _
         print('Calculating Auto-correlation...')
         
+    
         import tidynamics 
-        self.acf = tidynamics.acf(self.traj.xis[burnin:])
-        
+        self.acf = tidynamics.acf([mapping_func(xi) for xi in self.traj.xis[burnin:]])
+        print('Done! ')
+       
+       
        
 
 
@@ -248,15 +252,23 @@ def show_plot(results):
 
 
 if __name__ == '__main__':
-    sol = Solution(8,4,1,1e-2, )
+    sol = Solution(8,4,1,1e-2, max_epochs=4000)
 
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
-    print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
+    # print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
 
-    show_plot(sol.two_point_aa())
+    # show_plot(sol.two_point_aa())
 
-    sol.calc_auto_correlation()
     import matplotlib.pyplot as plt 
+    sol.calc_auto_correlation(mapping_func=lambda _: _)
+    plt.figure(figsize=(8,6))
     plt.plot(sol.acf) 
-    plt.savefig('autocorrelation.png')
+    plt.title(r'Mapping function: lambda _: _')
     
+
+    sol.calc_auto_correlation(mapping_func=lambda _: _@_)
+    plt.figure(figsize=(8,6))
+    plt.plot(sol.acf) 
+    plt.title(r'Mapping function: lambda _: _@_')
+    plt.show()
+    # plt.savefig('autocorrelation.png')
