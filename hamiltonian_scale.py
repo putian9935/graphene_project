@@ -5,26 +5,31 @@ Add new feature that records how hamiltonian scales with step
 from hybrid_mc import Trajectory 
 import numpy as np 
 from m_matrix import tau_n2ind, m_matrix_same4all, m_matrix_xi
-from scipy.sparse.linalg import spsolve, inv
+from scipy.sparse.linalg import spsolve, inv, splu
 from scipy import sparse
 from tqdm import tqdm
+from deprecated import m_matrix_xi_old 
+
+m_matrix_xi = m_matrix_xi_old
 
 class HamiltonianScale(Trajectory):
     rej_updates = 0
     tot_updates = 0
-    def __init__(self,Nt, N, hat_t, hat_U, time_step=0.005, max_steps=10, max_epochs=200):
+    def __init__(self,Nt, N, hat_t, hat_U, time_step=5e-4, max_steps=5, max_epochs=2000):
         super().__init__(Nt, N, hat_t, hat_U)
         
         def force(): 
             ''' calc the force according to eq. (221), with two chiral indices combined '''
             self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
             self.f_mat = self.m_mat @ self.m_mat.T
+            self.xs = []
 
-            ret = np.zeros_like(self.xi) 
+            ret = -self.xi
+            solver = splu(self.f_mat)
             for phi in self.phi:
-                x = spsolve(self.f_mat, phi) 
-                y = self.m_mat.T @ x  # can't figure out why need a transpose here, but it worked! 
-                ret += 2 * self.hat_U **.5 * (x * y) # trace is too fancy, simply an element-wise product 
+                self.xs.append(solver.solve(phi))
+                y = self.m_mat.T @ self.xs[-1]  # can't figure out why need a transpose here, but it worked! 
+                ret += 2 * self.hat_U **.5 * (self.xs[-1] * y) # trace is too fancy, simply an element-wise product 
 
             return ret
 
@@ -33,18 +38,27 @@ class HamiltonianScale(Trajectory):
             ''' calc the hamiltonian according to eq. (219), without the sum of alpha '''
             nonlocal pi
             # f_mat is always updated before calcing hamiltonian
-            return  sum(phi@spsolve(self.f_mat, phi) for phi in self.phi)
+            return  .5*(pi@pi+self.xi@self.xi)+sum(phi@x for x, phi in zip(self.xs, self.phi))
+
 
 
         def leapfrog():
             ''' the leapfrog algorithm ''' 
             nonlocal pi
-            pi -= force() * (time_step / 2)
+            pi += force() * (time_step / 2)
             for _ in range(max_steps - 1):
                 self.xi += pi * time_step 
-                pi -= force() * time_step
+                pi += force() * time_step
             self.xi += pi * time_step 
-            pi -= force() * (time_step / 2)
+            pi += force() * (time_step / 2)
+
+        def one_step_leapfrog():
+            ''' the leapfrog algorithm for only one step''' 
+            nonlocal pi
+            pi += force() * (time_step / 2)
+            self.xi += pi * time_step 
+            pi += force() * (time_step / 2)
+
 
         self._generate_phi()
         tmp_ham = []
@@ -57,7 +71,7 @@ class HamiltonianScale(Trajectory):
             h_start = hamiltonian()  # record the hamiltonian at the beginning
 
             # launch leapfrog algorithm
-            leapfrog()
+            one_step_leapfrog()
 
             h_end = hamiltonian()  # record the hamiltonian at the end
             
@@ -75,4 +89,11 @@ class HamiltonianScale(Trajectory):
 
 if __name__ == '__main__':
     from histogram import show_histogram
-    show_histogram(HamiltonianScale(8,4,2,1,).tot_delta_h)
+    import matplotlib.pyplot as plt 
+
+    time_steps = [5e-2, 5e-3, 5e-4]
+    for ts in time_steps:
+        np.random.seed(42)
+        hs = HamiltonianScale(8,2,2,1,time_step=ts)
+        show_histogram(hs.tot_delta_h[hs.max_epochs//2:], '%.1e'%ts, np.std(hs.tot_delta_h[hs.max_epochs//2:]))
+        print(np.std(hs.tot_delta_h[hs.max_epochs//2:]))

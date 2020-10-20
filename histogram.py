@@ -1,13 +1,9 @@
 import matplotlib.pyplot as plt 
 
-def show_histogram(xs):
+def show_histogram(xs, title,std):
+    plt.figure()
     plt.hist(xs, bins=int(len(xs)**.5/2), )
-    plt.show()
+    plt.title(r'$\Delta t$=%s, $\sigma$=%.3e'%(title,std))
+    plt.savefig('Hamiltonian_Scale_%s.png'%title)
     
 
-
-if __name__ == '__main__':
-    import numpy as np 
-
-    show_histogram(np.random.randn(10000))
-    
