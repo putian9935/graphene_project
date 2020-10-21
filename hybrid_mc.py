@@ -51,7 +51,7 @@ class Trajectory():
        
     
     
-    def evolve(self, time_step=.4, max_steps=10):
+    def evolve(self, time_step, max_steps=10):
         """ 
         Evolve using leapfrog algorithm introduced on page 28;
         After this function call, self will be equipped with M matrix.
@@ -128,7 +128,7 @@ class Trajectory():
 
 
         self._generate_phi()
-        tmp_ham = []
+        # tmp_ham = []
         for epoch in tqdm(range(self.max_epochs)):
             prev_xi = self.xi.copy()  # make a copy of previous state in case hamiltonian gets bad 
 
@@ -145,18 +145,20 @@ class Trajectory():
             # so it's cool to accept one update while rejecting another
 
             Trajectory.tot_updates += 1
-            tmp_ham.append(['acc', h_end-h_start])
+            # tmp_ham.append(['acc', h_end-h_start, prev_xi.copy(), self.xi.copy()])
+            # print(prev_xi[:2], self.xi[:2])
+            # input()
             if h_end < h_start: # exp might overflow
                 self.xis.append(self.xi)
                 continue
             if np.random.random() > np.exp(-h_end + h_start):
                 self.xi = prev_xi  
                 Trajectory.rej_updates += 1
-                tmp_ham[-1][0]='rej'
+                # tmp_ham[-1][0]='rej'
                 continue
             self.xis.append(self.xi)
                 
-        Trajectory.delta_ham.append(tmp_ham)
+        # Trajectory.delta_ham.append(tmp_ham)
 
                 
 class TestCorrectness(Trajectory):
