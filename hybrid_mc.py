@@ -153,6 +153,7 @@ class Trajectory():
                 self.xi = prev_xi  
                 Trajectory.rej_updates += 1
                 tmp_ham[-1][0]='rej'
+                continue
             self.xis.append(self.xi)
                 
         Trajectory.delta_ham.append(tmp_ham)
@@ -223,54 +224,30 @@ class Solution():  # cannot bear passing same arguments, use class instead
         self.traj.evolve(time_step=time_step)
     
 
-    def two_point_aa(self, burnin=None):
+
+    def spin_correl_aa_average_time(self, burnin=None):
         """ 
         Calc observables via eq. (246)
 
         As Feng mentioned, NEVER use matrix inverse unless you have a good reason. Following code uses cached solver to speedup solution. 
+
+        Imaginary time average is performed from tau = 1 to Nt-1. 
         """
         
         if not burnin: 
-            burnin = self.traj.max_epochs // 2 
+            burnin = len(self.traj.xis) // 2 
 
         print('Doing statistics...')
-        ret = np.zeros((self.Nt - 1,self.N, self.N))  # a function of R and tau
-
-        buf = np.zeros(self.N*self.N*self.Nt*2)
-        for xi in tqdm(self.traj.xis[burnin:]):
-            inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
-            for tau in range(self.Nt-1):      
-                ind0 = tau_n2ind(tau, 0, 0, self.N)  # ind0 is irrelevant to n1, n2, thus to indr as well
-                buf[ind0] = 1
-                sol_buf = inv_solver.solve(buf) # thus we can solve for buf once for a fixed tau
-                for n1 in range(self.N):
-                    for n2 in range(self.N):
-                        # this line is effectively an inner product 
-                        ret[tau, n1, n2,] += sol_buf[tau_n2ind(tau+1, n1, n2, self.N)] ** 2
-                buf[ind0] = 0
-        ret /= len(self.traj.xis) 
-        return ret
-
-
-    def two_point_aa_sum_time(self, burnin=None):
-        """ 
-        Calc observables via eq. (246)
-
-        As Feng mentioned, NEVER use matrix inverse unless you have a good reason. Following code uses cached solver to speedup solution. 
-        """
         
-        if not burnin: 
-            burnin = self.traj.max_epochs // 2 
-
-        print('Doing statistics...')
         ret = np.zeros((self.N, self.N))  # a function of R and tau
 
         buf = np.zeros(self.N*self.N*self.Nt*2)
         act = 40
+
         sample = self.traj.xis[burnin::act]
         for xi in tqdm(sample):
             inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
-            for tau in range(self.Nt-1):      
+            for tau in range(1, self.Nt-1):      
                 ind0 = tau_n2ind(tau, 0, 0, self.N)  # ind0 is irrelevant to n1, n2, thus to indr as well
                 buf[ind0] = 1
                 sol_buf = inv_solver.solve(buf) # thus we can solve for buf once for a fixed tau
@@ -280,18 +257,18 @@ class Solution():  # cannot bear passing same arguments, use class instead
                         ret[n1, n2,] += sol_buf[tau_n2ind(tau+1, n1, n2, self.N)] ** 2
                 buf[ind0] = 0
 
-        ret /= len(sample) * (self.Nt-1)
-        print(ret)
+        ret /= len(sample) * (self.Nt-2)
+        
         return ret
 
     def calc_auto_correlation(self, mapping_func=None, burnin=None):
-        ''' Calc auto-correlation function of xi's ''' 
+        ''' Calc auto-correlation of function of xi's ''' 
         if not burnin: 
-            burnin = self.traj.max_epochs // 2 
+            burnin = len(self.traj.xis) // 2 
         if not mapping_func:
           mapping_func = lambda _: _  
 
-        print('Calculating Auto-correlation...')
+        print('Calculating auto-correlation...')
         
         import tidynamics  # a very good library that calc acf 
         x = np.array([mapping_func(xi) for xi in self.traj.xis[burnin:]])  # apply the mapping function
@@ -302,48 +279,41 @@ class Solution():  # cannot bear passing same arguments, use class instead
         print('Done! ')
        
        
-       
-
-
-def show_plot(results):
-    import matplotlib.pyplot as plt
-    for i, res in enumerate(results):
-        plt.matshow(res) 
-        plt.savefig('%d.png' % i, )
-
-
 def show_single_plot(res):
-    import matplotlib.pyplot as plt
+    plt.figure(figsize=(6,6))
     plt.colorbar(plt.matshow(np.log(res))) 
-    plt.savefig('result_sum.png', )
+    plt.savefig('result_sum.png')
 
 
 
 if __name__ == '__main__':
-    sol = Solution(50,8,1,1e-2, time_step=0.4, max_epochs=400)
+    import matplotlib.pyplot as plt 
+
+    sol = Solution(50,10,1e-2,1e-4, time_step=0.35, max_epochs=200)
 
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
     print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
 
-    show_single_plot(sol.two_point_aa_sum_time())
+    show_single_plot(sol.spin_correl_aa_average_time())
 
-    import matplotlib.pyplot as plt 
     
     sol.calc_auto_correlation(mapping_func=lambda _: _)
     plt.figure(figsize=(8,6))
-    plt.plot(sol.acf[:100]) 
+    plt.plot(sol.acf[:200]) 
     plt.title(r'Mapping function: lambda _: _')
+    # plt.show()
     plt.savefig('itself.png')
     
     sol.calc_auto_correlation(mapping_func=lambda _: _@_)
     plt.figure(figsize=(8,6))
-    plt.plot(sol.acf[:100]) 
+    plt.plot(sol.acf[:200]) 
     plt.title(r'Mapping function: lambda _: _@_')
+    # plt.show()
     plt.savefig('norm.png')
     
     sol.calc_auto_correlation(mapping_func=lambda _: _[0])
     plt.figure(figsize=(8,6))
-    plt.plot(sol.acf[:100]) 
+    plt.plot(sol.acf[:200]) 
     plt.title(r'Mapping function: lambda _: _[0]')
     # plt.show()
     plt.savefig('first_component.png')
