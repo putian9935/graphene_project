@@ -128,7 +128,7 @@ class Trajectory():
 
 
         self._generate_phi()
-        # tmp_ham = []
+        tmp_ham = []
         for epoch in tqdm(range(self.max_epochs)):
             prev_xi = self.xi.copy()  # make a copy of previous state in case hamiltonian gets bad 
 
@@ -145,20 +145,22 @@ class Trajectory():
             # so it's cool to accept one update while rejecting another
 
             Trajectory.tot_updates += 1
+            # for visualization 
             # tmp_ham.append(['acc', h_end-h_start, prev_xi.copy(), self.xi.copy()])
-            # print(prev_xi[:2], self.xi[:2])
-            # input()
+
+            tmp_ham.append(['acc', h_end-h_start])
+            
             if h_end < h_start: # exp might overflow
                 self.xis.append(self.xi)
                 continue
             if np.random.random() > np.exp(-h_end + h_start):
                 self.xi = prev_xi  
                 Trajectory.rej_updates += 1
-                # tmp_ham[-1][0]='rej'
+                tmp_ham[-1][0]='rej'
                 continue
             self.xis.append(self.xi)
                 
-        # Trajectory.delta_ham.append(tmp_ham)
+        Trajectory.delta_ham.append(tmp_ham)
 
                 
 class TestCorrectness(Trajectory):
@@ -291,7 +293,7 @@ def show_single_plot(res):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt 
 
-    sol = Solution(50,10,1e-2,1e-4, time_step=0.35, max_epochs=200)
+    sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=200)
 
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
     print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
