@@ -18,7 +18,6 @@ from tqdm import tqdm
 
 np.random.seed(42)  # fix seed for reproductibility 
 
-# spsolve = lambda *_: gcrotmk(*_)[0]
 
 class Trajectory():
     """
@@ -52,7 +51,7 @@ class Trajectory():
        
     
     
-    def evolve(self, time_step=.8, max_steps=10):
+    def evolve(self, time_step=.4, max_steps=10):
         """ 
         Evolve using leapfrog algorithm introduced on page 28;
         After this function call, self will be equipped with M matrix.
@@ -211,17 +210,17 @@ class TestCorrectness(Trajectory):
         
 
 class Solution():  # cannot bear passing same arguments, use class instead
-    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400):
+    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400, time_step=0.4):
         self.N, self.Nt = N, Nt
         self.hat_t, self.hat_U = hat_t, hat_U 
         
-        self._generate_trajectories(max_epochs)
+        self._generate_trajectories(max_epochs, time_step)
 
 
-    def _generate_trajectories(self, max_epochs):
+    def _generate_trajectories(self, max_epochs, time_step):
         ''' Generate trajectories using HMC ''' 
         self.traj = Trajectory(self.Nt, self.N, self.hat_t, self.hat_U, max_epochs)
-        self.traj.evolve()
+        self.traj.evolve(time_step=time_step)
     
 
     def two_point_aa(self, burnin=None):
@@ -253,6 +252,35 @@ class Solution():  # cannot bear passing same arguments, use class instead
         return ret
 
 
+    def two_point_aa_sum_time(self, burnin=None):
+        """ 
+        Calc observables via eq. (246)
+
+        As Feng mentioned, NEVER use matrix inverse unless you have a good reason. Following code uses cached solver to speedup solution. 
+        """
+        
+        if not burnin: 
+            burnin = self.traj.max_epochs // 2 
+
+        print('Doing statistics...')
+        ret = np.zeros((self.N, self.N))  # a function of R and tau
+
+        buf = np.zeros(self.N*self.N*self.Nt*2)
+        for xi in tqdm(self.traj.xis[burnin::40]):
+            inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
+            for tau in range(self.Nt-1):      
+                ind0 = tau_n2ind(tau, 0, 0, self.N)  # ind0 is irrelevant to n1, n2, thus to indr as well
+                buf[ind0] = 1
+                sol_buf = inv_solver.solve(buf) # thus we can solve for buf once for a fixed tau
+                for n1 in range(self.N):
+                    for n2 in range(self.N):
+                        # this line is effectively an inner product 
+                        ret[n1, n2,] += sol_buf[tau_n2ind(tau+1, n1, n2, self.N)] ** 2
+                buf[ind0] = 0
+
+            ret /= len(self.traj.xis) 
+        return ret
+
     def calc_auto_correlation(self, mapping_func=None, burnin=None):
         ''' Calc auto-correlation function of xi's ''' 
         if not burnin: 
@@ -281,31 +309,38 @@ def show_plot(results):
         plt.savefig('%d.png' % i, )
 
 
+def show_single_plot(res):
+    import matplotlib.pyplot as plt
+    plt.colorbar(plt.matshow(np.log(res))) 
+    plt.savefig('result_sum.png', )
+
+
+
 if __name__ == '__main__':
-    sol = Solution(50,10,1,1e-2, max_epochs=4000)
+    sol = Solution(50,8,1,1e-2, time_step=0.4, max_epochs=400)
 
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
-    # print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
+    print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
 
-    # show_plot(sol.two_point_aa())
+    show_single_plot(sol.two_point_aa_sum_time())
 
     import matplotlib.pyplot as plt 
     
     sol.calc_auto_correlation(mapping_func=lambda _: _)
     plt.figure(figsize=(8,6))
-    plt.plot(sol.acf) 
+    plt.plot(sol.acf[:100]) 
     plt.title(r'Mapping function: lambda _: _')
-    
+    plt.savefig('itself.png')
     
     sol.calc_auto_correlation(mapping_func=lambda _: _@_)
     plt.figure(figsize=(8,6))
-    plt.plot(sol.acf) 
+    plt.plot(sol.acf[:100]) 
     plt.title(r'Mapping function: lambda _: _@_')
-    plt.show()
+    plt.savefig('norm.png')
     
     sol.calc_auto_correlation(mapping_func=lambda _: _[0])
     plt.figure(figsize=(8,6))
-    plt.plot(sol.acf) 
+    plt.plot(sol.acf[:100]) 
     plt.title(r'Mapping function: lambda _: _[0]')
-    plt.show()
-    # plt.savefig('autocorrelation.png')
+    # plt.show()
+    plt.savefig('first_component.png')
