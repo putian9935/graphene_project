@@ -248,7 +248,7 @@ class Solution():  # cannot bear passing same arguments, use class instead
                         # this line is effectively an inner product 
                         ret[tau, n1, n2,] += sol_buf[tau_n2ind(tau+1, n1, n2, self.N)] ** 2
                 buf[ind0] = 0
-            ret /= len(self.traj.xis) 
+        ret /= len(self.traj.xis) 
         return ret
 
 
@@ -266,7 +266,9 @@ class Solution():  # cannot bear passing same arguments, use class instead
         ret = np.zeros((self.N, self.N))  # a function of R and tau
 
         buf = np.zeros(self.N*self.N*self.Nt*2)
-        for xi in tqdm(self.traj.xis[burnin::40]):
+        act = 40
+        sample = self.traj.xis[burnin::act]
+        for xi in tqdm(sample):
             inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
             for tau in range(self.Nt-1):      
                 ind0 = tau_n2ind(tau, 0, 0, self.N)  # ind0 is irrelevant to n1, n2, thus to indr as well
@@ -278,7 +280,8 @@ class Solution():  # cannot bear passing same arguments, use class instead
                         ret[n1, n2,] += sol_buf[tau_n2ind(tau+1, n1, n2, self.N)] ** 2
                 buf[ind0] = 0
 
-            ret /= len(self.traj.xis) 
+        ret /= len(sample) * (self.Nt-1)
+        print(ret)
         return ret
 
     def calc_auto_correlation(self, mapping_func=None, burnin=None):
