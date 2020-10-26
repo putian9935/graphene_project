@@ -236,3 +236,40 @@ def m_matrix_xi_old(Nt, N, hat_U, xi):
 
     return sparse.csc_matrix((val, (row, col)), shape=(mat_size*2, mat_size*2), dtype=float)
 
+
+
+def two_point_aa(self, burnin=None):
+    """ 
+    Calc observables via eq. (246)
+
+    As Feng mentioned, NEVER use matrix inverse unless you have a good reason. Following code uses cached solver to speedup solution. 
+    """
+    
+    if not burnin: 
+        burnin = self.traj.max_epochs // 2 
+
+    print('Doing statistics...')
+    ret = np.zeros((self.Nt - 1,self.N, self.N))  # a function of R and tau
+
+    buf = np.zeros(self.N*self.N*self.Nt*2)
+    for xi in tqdm(self.traj.xis[burnin:]):
+        inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
+        for tau in range(self.Nt-1):      
+            ind0 = tau_n2ind(tau, 0, 0, self.N)  # ind0 is irrelevant to n1, n2, thus to indr as well
+            buf[ind0] = 1
+            sol_buf = inv_solver.solve(buf) # thus we can solve for buf once for a fixed tau
+            for n1 in range(self.N):
+                for n2 in range(self.N):
+                    # this line is effectively an inner product 
+                    ret[tau, n1, n2,] += sol_buf[tau_n2ind(tau+1, n1, n2, self.N)] ** 2
+            buf[ind0] = 0
+    ret /= len(self.traj.xis) 
+    return ret
+
+
+
+def show_plot(results):
+    import matplotlib.pyplot as plt
+    for i, res in enumerate(results):
+        plt.matshow(res) 
+        plt.savefig('%d.png' % i, )

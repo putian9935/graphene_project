@@ -37,6 +37,9 @@ def m_matrix_same4all(Nt, N, hat_t, hat_U):
     val = []
 
     mat_size = N*N*Nt
+
+    hat_U *= .5  # only half of \hat U appears in eq. (121) 
+     
     # take care of the anti-periodic boundary condition 
     # pay attention to the function call val.extend
     for y in range(N*N):
