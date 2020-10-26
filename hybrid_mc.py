@@ -8,6 +8,10 @@ Jobs done:
 2. Save fixed part M matrix for acceleration;
 
 3. Fix wrong leapfrog (sign before force term); 
+
+==================
+To do:
+1. Merge different statistics into one function 
 """
 
 import numpy as np 
@@ -151,14 +155,17 @@ class Trajectory():
             tmp_ham.append(['acc', h_end-h_start])
             
             if h_end < h_start: # exp might overflow
-                self.xis.append(self.xi)
+                self.xis.append(self.xi.copy())  # a copy is necessary
                 continue
             if np.random.random() > np.exp(-h_end + h_start):
                 self.xi = prev_xi  
                 Trajectory.rej_updates += 1
                 tmp_ham[-1][0]='rej'
-                continue
-            self.xis.append(self.xi)
+
+                # no continue here, save all points as sample
+                # continue
+            self.xis.append(self.xi.copy())
+            
                 
         Trajectory.delta_ham.append(tmp_ham)
 
@@ -228,8 +235,7 @@ class Solution():  # cannot bear passing same arguments, use class instead
         self.traj.evolve(time_step=time_step)
     
 
-
-    def spin_correl_aa_average_time(self, burnin=None):
+    def spin_correl_aa(self, burnin=None):
         """ 
         Calc observables via eq. (246)
 
@@ -262,9 +268,60 @@ class Solution():  # cannot bear passing same arguments, use class instead
                 buf[ind0] = 0
 
         ret /= len(sample) * (self.Nt-2)
-        
+        print(ret[0, 0])
         return ret
 
+
+    def number_correl_aa(self, burnin=None):
+        """ 
+        Calc observables via eq. (204), (205)
+        
+        Imaginary time average is performed from tau = 1 to Nt-1. 
+        """
+        
+        if not burnin: 
+            burnin = len(self.traj.xis) // 2 
+
+        print('Doing statistics...')
+        
+        ret = np.zeros((self.N, self.N))  # a function of R and tau
+
+        buf = np.zeros(self.N*self.N*self.Nt*2)
+        act = 40
+        sample = self.traj.xis[burnin::act]
+        for xi in tqdm(sample):
+            inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
+            for tau in range(1, self.Nt-1):      
+                ind0 = tau_n2ind(tau, 0, 0, self.N)  # ind0 is irrelevant to n1, n2, thus to indr as well
+                buf[ind0] = 1
+                sol_buf = inv_solver.solve(buf) # thus we can solve for buf once for a fixed tau
+                for n1 in range(self.N):
+                    for n2 in range(self.N):
+                        # this line is effectively an inner product 
+                        ret[n1, n2,] += sol_buf[tau_n2ind(tau+1, n1, n2, self.N)] ** 2
+                buf[ind0] = 0
+
+        ret /= len(sample) * (self.Nt-2)
+        print(ret[0, 0])
+        return ret
+
+
+    def calc_two_point(self, burnin=None):
+        r'''
+        Two point function defined in (194). 
+
+        We need to transform M matrix into reciprocal space, this can be easily seen from a unitary transformation perspective: view Fourier transform as a unitary matrix U, we have 
+            \tilde M = U^{-1} M U, 
+        where U_{ij} = 1/\sqrt{N N} \exp i 2\pi i j /N. 
+
+        In fact, we can unitilize FFT pack to speed up calculation. Furthermore, chiral index complicates the situation. Since intrinsic dimension is two, we would reshape half of vector into a N\times N matrix, invoke ifft2 subroutine, and flatten it once more for sparse solver. Finally we invoke fft2 subroutine for final solution.      
+
+        Actually we are only concerned with diagonal element.    
+        '''
+
+        pass
+
+            
     def calc_auto_correlation(self, mapping_func=None, burnin=None):
         ''' Calc auto-correlation of function of xi's ''' 
         if not burnin: 
@@ -281,6 +338,24 @@ class Solution():  # cannot bear passing same arguments, use class instead
         self.acf /= self.acf[0]  # normalize the result         
         
         print('Done! ')
+    
+
+    def calc_auto_correlation_with_coarsen(self, mapping_func=None, burnin=None):
+        ''' Calc auto-correlation of function of xi's ''' 
+        if not burnin: 
+            burnin = len(self.traj.xis) // 2 
+        if not mapping_func:
+          mapping_func = lambda _: _  
+
+        print('Calculating auto-correlation...')
+        
+        from block import linear_blocking
+        
+        x = linear_blocking(np.array([mapping_func(xi) for xi in self.traj.xis[burnin:]]))  # apply the mapping function
+        
+        print('Done! ')
+        
+        return x 
        
        
 def show_single_plot(res):
@@ -293,12 +368,16 @@ def show_single_plot(res):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt 
 
-    sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=200)
+    # sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=1000)
+    sol = Solution(5,1,1e-1,0., time_step=1, max_epochs=5000) 
+
+    # sol.calc_two_point()
 
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
     print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
 
-    show_single_plot(sol.spin_correl_aa_average_time())
+    plt.plot(sol.calc_auto_correlation_with_coarsen(lambda _: _[0]))
+    plt.show()
 
     
     sol.calc_auto_correlation(mapping_func=lambda _: _)
