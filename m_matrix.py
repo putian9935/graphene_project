@@ -41,48 +41,12 @@ def m_matrix_xi(Nt, N, hat_U, xi):
 
 def m_matrix_same4all(Nt, N, hat_t, hat_U):
     ''' calc xi-independent part of M matrix  '''
-    row = []
-    col = []
-    val = []
-
-    mat_size = N*N*Nt
-
-    hat_U *= .5  # only half of \hat U appears in eq. (121) 
-     
-    # take care of the anti-periodic boundary condition 
-    # pay attention to the function call val.extend
-    for y in range(N*N):
-        row.extend([y - N*N+mat_size, y, y, y - N*N+2*mat_size, y+mat_size, y+mat_size])
-        col.extend([y]*3+[y+mat_size]*3)
-        val.extend([-1, -1, hat_U,-1, -1, hat_U])
-        
-    # general case
-    for y in range(N*N, mat_size):
-        row.extend([y - N*N, y, y, y - N*N+mat_size, y+mat_size, y+mat_size])
-        col.extend([y]*3+[y+mat_size]*3)
-        val.extend([1, -1, hat_U,1, -1, hat_U])
-
-    for y in range(mat_size):
-        # periodic boundary condition, much easier to implement
-        row.extend([y+mat_size, (y+N)%mat_size+mat_size, (y-N)%mat_size+mat_size, (y+1)%mat_size+mat_size, (y-1)%mat_size+mat_size])
-        col.extend([y]*5)
-        val.extend([-hat_t, -hat_t/2, -hat_t/2, -hat_t/2, -hat_t/2])
-
-        row.extend([y, (y+N)%mat_size, (y-N)%mat_size, (y+1)%mat_size, (y-1)%mat_size])
-        col.extend([y+mat_size]*5)
-        val.extend([-hat_t, -hat_t/2, -hat_t/2, -hat_t/2, -hat_t/2])
-
-        row.extend([(y+N)%mat_size, (y-N)%mat_size, (y+1)%mat_size, (y-1)%mat_size])
-        col.extend([y+mat_size]*4)
-        val.extend([hat_t/2, -hat_t/2, hat_t/2, -hat_t/2])
-
-        row.extend([(y+N)%mat_size+mat_size, (y-N)%mat_size+mat_size, (y+1)%mat_size+mat_size, (y-1)%mat_size+mat_size])
-        col.extend([y]*4)
-        val.extend([-hat_t/2, hat_t/2, -hat_t/2, hat_t/2])
-
-        
-    # not a single multiplication with matrix in QM is innocent, it's always a direct product
-    return sparse.csc_matrix((val, (row, col)), shape=(Nt*N*N*2, Nt*N*N*2), dtype=float)
+    s1, s2 = m_matrix_tau_free(Nt,N,hat_t,0)
+    
+    return m_matrix_tau_shift(Nt,N,0) \
+        +sparse.kron(np.array([[0,0],[1,0]]), s1, format='csc') \
+        +sparse.kron(np.array([[0,1],[0,0]]), s2, format='csc') \
+        +hat_U/2*sparse.eye(2*N*N*Nt, format='csc')
 
 
 def m_matrix_tau_free(Nt, N, hat_t, hat_U):
@@ -175,8 +139,6 @@ def m_matrix_tau_shift_smaller(Nt, N, hat_U):
         # original version, maybe incorrect
         val.extend([-1, -1, hat_U])
         
-
-    print(row)
     # general case
     for y in range(N*N, mat_size):
         row.extend([y - N*N, y, y])
@@ -185,66 +147,67 @@ def m_matrix_tau_shift_smaller(Nt, N, hat_U):
         # original version, maybe incorrect
         val.extend([1, -1, hat_U])  
         
-    print(row)
+        
     # not a single multiplication with matrix in QM is innocent, it's always a direct product
     return sparse.csc_matrix((val, (row, col)), shape=(Nt*N*N, Nt*N*N), dtype=float)
 
 
+def ft2d_speedup(mat, Nt, N):
+    r""" 
+    Fourier transform of a matrix with size (Nt\times N\times N)^2
+    """
+    from itertools import product
+    ret = np.zeros((N*N, N*N), dtype='complex128')
+    lattice_size = N * N
+    
+    for k in  range(lattice_size):
+        k1, k2 = k//N, k%N 
+        k_prime = k
+        kp1, kp2 = k_prime//N, k_prime%N
+        
+        ret[k_prime, k] = sum(
+            mat[i1*N + i2, j1*N + j2] * np.exp(2.j*np.pi*(-kp1*i1-kp2*i2+k1*j1+k2*j2)/N) 
+            for i1, i2, j1, j2 in product(range(N),range(N),range(N),range(N))
+        ) 
+    ret /= lattice_size
+    # print(np.diag(ret).reshape(Nt,N, N))
+    return sparse.kron(np.eye(Nt), ret).tocsc()
+        
+
+def ft2d(mat, Nt, N):
+    r""" 
+    Fourier transform of a matrix with size (Nt\times N\times N)^2
+    """
+    from itertools import product
+    ret = np.zeros((Nt*N*N, Nt*N*N), dtype='complex128')
+    lattice_size = N * N
+    
+    for tau, tau_prime, k, k_prime \
+            in product(range(Nt), range(Nt), range(lattice_size), range(lattice_size)):
+        k1, k2 = k//N, k%N 
+        kp1, kp2 = k_prime//N, k_prime%N
+        
+        ret[k_prime+tau_prime*lattice_size, k+tau*lattice_size] = sum(
+            mat[tau_prime*lattice_size + i1*N + i2, tau*lattice_size + j1*N + j2] 
+            * np.exp(2.j*np.pi*(-kp1*i1-kp2*i2+k1*j1+k2*j2)/N) 
+            for i1, i2, j1, j2 in product(range(N),range(N),range(N),range(N))
+        ) 
+    ret /= lattice_size
+    # print(np.diag(ret).reshape(Nt,N, N))
+    return ret
+        
 
 if __name__ == '__main__':
-    def ft2d_speedup(mat, Nt, N):
-        r""" 
-        Fourier transform of a matrix with size (Nt\times N\times N)^2
-        """
-        from itertools import product
-        ret = np.zeros((N*N, N*N), dtype='complex128')
-        lattice_size = N * N
-        
-        for k in  range(lattice_size):
-            k1, k2 = k//N, k%N 
-            k_prime = k
-            kp1, kp2 = k_prime//N, k_prime%N
-            
-            ret[k_prime, k] = sum(
-                mat[i1*N + i2, j1*N + j2] * np.exp(2.j*np.pi*(-kp1*i1-kp2*i2+k1*j1+k2*j2)/N) 
-                for i1, i2, j1, j2 in product(range(N),range(N),range(N),range(N))
-            ) 
-        ret /= lattice_size
-        # print(np.diag(ret).reshape(Nt,N, N))
-        return sparse.kron(np.eye(Nt), ret).tocsc()
-            
-
-    def ft2d(mat, Nt, N):
-        r""" 
-        Fourier transform of a matrix with size (Nt\times N\times N)^2
-        """
-        from itertools import product
-        ret = np.zeros((Nt*N*N, Nt*N*N), dtype='complex128')
-        lattice_size = N * N
-        
-        for tau, tau_prime, k, k_prime \
-                in product(range(Nt), range(Nt), range(lattice_size), range(lattice_size)):
-            k1, k2 = k//N, k%N 
-            kp1, kp2 = k_prime//N, k_prime%N
-            
-            ret[k_prime+tau_prime*lattice_size, k+tau*lattice_size] = sum(
-                mat[tau_prime*lattice_size + i1*N + i2, tau*lattice_size + j1*N + j2] 
-                * np.exp(2.j*np.pi*(-kp1*i1-kp2*i2+k1*j1+k2*j2)/N) 
-                for i1, i2, j1, j2 in product(range(N),range(N),range(N),range(N))
-            ) 
-        ret /= lattice_size
-        # print(np.diag(ret).reshape(Nt,N, N))
-        return ret
-            
-
 
     from scipy.sparse.linalg import inv
+    
+    np.set_printoptions(linewidth=120, precision=3)
     # N = Nt = 2 is complicated enough for human eye
-    N = 5
+    N, Nt = 2, 2 
+    
     for Nt, hat_t in [(10, 3)]:
         mat_size = N * N * Nt
         lat_size = N * N
-        np.set_printoptions(linewidth=120, precision=3)
         s1, s2 = m_matrix_tau_free(Nt,N,hat_t,0)
         e_rl, e_lr = ft2d_speedup(s1, Nt, N), ft2d_speedup(s2, Nt, N)
 

@@ -60,7 +60,7 @@ def prop2sigma1_old(Nt, N, hat_t, hat_U):
                 val.extend([-hat_t, -hat_t/2, -hat_t/2, -hat_t/2, -hat_t/2])
     
     # for debug use only
-    # print(sparse.coo_matrix((val, (row, col))).toarray())
+    print(sparse.coo_matrix((val, (row, col))).toarray())
 
     return sparse.kron(  
             np.array([[0,1],[1,0]]),
@@ -87,7 +87,7 @@ def prop2sigma2_old(Nt, N, hat_t, hat_U):
                 val.extend([-hat_t/2, hat_t/2, -hat_t/2, hat_t/2])
 
     # for debug use only
-    # print(sparse.coo_matrix((val, (row, col))).toarray())
+    print(sparse.coo_matrix((val, (row, col))).toarray())
 
     return sparse.kron(  
             np.array([[0,-1],[1,0]]),
@@ -267,9 +267,61 @@ def two_point_aa(self, burnin=None):
     return ret
 
 
-
 def show_plot(results):
     import matplotlib.pyplot as plt
     for i, res in enumerate(results):
         plt.matshow(res) 
         plt.savefig('%d.png' % i, )
+
+
+def m_matrix_same4all_wrong(Nt, N, hat_t, hat_U):
+    ''' calc xi-independent part of M matrix  '''
+    row = []
+    col = []
+    val = []
+
+    mat_size = N*N*Nt
+
+    hat_U *= .5  # only half of \hat U appears in eq. (121) 
+     
+    # take care of the anti-periodic boundary condition 
+    # pay attention to the function call val.extend
+    for y in range(N*N):
+        row.extend([y - N*N+mat_size, y, y, y - N*N+2*mat_size, y+mat_size, y+mat_size])
+        col.extend([y]*3+[y+mat_size]*3)
+        val.extend([-1, -1, hat_U,-1, -1, hat_U])
+        
+    # general case
+    for y in range(N*N, mat_size):
+        row.extend([y - N*N, y, y, y - N*N+mat_size, y+mat_size, y+mat_size])
+        col.extend([y]*3+[y+mat_size]*3)
+        val.extend([1, -1, hat_U,1, -1, hat_U])
+
+    for y in range(mat_size):
+        # periodic boundary condition, much easier to implement
+        row.extend([y+mat_size, (y+N)%mat_size+mat_size, (y-N)%mat_size+mat_size, (y+1)%mat_size+mat_size, (y-1)%mat_size+mat_size])
+        col.extend([y]*5)
+        val.extend([-hat_t, -hat_t/2, -hat_t/2, -hat_t/2, -hat_t/2])
+
+        row.extend([y, (y+N)%mat_size, (y-N)%mat_size, (y+1)%mat_size, (y-1)%mat_size])
+        col.extend([y+mat_size]*5)
+        val.extend([-hat_t, -hat_t/2, -hat_t/2, -hat_t/2, -hat_t/2])
+
+        row.extend([(y+N)%mat_size, (y-N)%mat_size, (y+1)%mat_size, (y-1)%mat_size])
+        col.extend([y+mat_size]*4)
+        val.extend([hat_t/2, -hat_t/2, hat_t/2, -hat_t/2])
+
+        row.extend([(y+N)%mat_size+mat_size, (y-N)%mat_size+mat_size, (y+1)%mat_size+mat_size, (y-1)%mat_size+mat_size])
+        col.extend([y]*4)
+        val.extend([-hat_t/2, hat_t/2, -hat_t/2, hat_t/2])
+
+        
+    # not a single multiplication with matrix in QM is innocent, it's always a direct product
+    return sparse.csc_matrix((val, (row, col)), shape=(Nt*N*N*2, Nt*N*N*2), dtype=float)
+
+
+if __name__ == '__main__':
+    from m_matrix import tau_n2ind 
+    prop2sigma1_old(5,2,1e-2,0)
+    prop2sigma2_old(5,2,1e-2,0)
+

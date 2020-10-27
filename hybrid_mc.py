@@ -369,7 +369,7 @@ if __name__ == '__main__':
     import matplotlib.pyplot as plt 
 
     # sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=1000)
-    sol = Solution(5,1,1e-1,0., time_step=1, max_epochs=5000) 
+    sol = Solution(5,1,1e-2,1e-4, time_step=1, max_epochs=500) 
 
     # sol.calc_two_point()
 
@@ -378,7 +378,7 @@ if __name__ == '__main__':
 
     plt.plot(sol.calc_auto_correlation_with_coarsen(lambda _: _@_))
     plt.show()
-
+    # plt.savefig('norm_bin.png')
     
     sol.calc_auto_correlation(mapping_func=lambda _: _)
     plt.figure(figsize=(8,6))
