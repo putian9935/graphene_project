@@ -341,7 +341,7 @@ class Solution():  # cannot bear passing same arguments, use class instead
     
 
     def calc_auto_correlation_with_coarsen(self, mapping_func=None, burnin=None):
-        ''' Calc auto-correlation of function of xi's ''' 
+        ''' Coarsening to determine ac time.  ''' 
         if not burnin: 
             burnin = len(self.traj.xis) // 2 
         if not mapping_func:
@@ -376,7 +376,7 @@ if __name__ == '__main__':
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
     print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
 
-    plt.plot(sol.calc_auto_correlation_with_coarsen(lambda _: _[0]))
+    plt.plot(sol.calc_auto_correlation_with_coarsen(lambda _: _@_))
     plt.show()
 
     
