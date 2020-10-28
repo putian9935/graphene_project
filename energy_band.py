@@ -26,6 +26,17 @@ def energy(k1, k2):
     ''' only E_+ in eq. (53) will be returned; t is taken to be 1. '''
     return (f1(k1, k2)**2 + f2(k1,k2)**2)**.5 
 
+
+def energy_grid(N):
+    ''' Return unperturbed energy in reciprocal space. '''
+    return energy(
+            *np.meshgrid(
+                np.linspace(0,1,N,endpoint=False),  # k1
+                np.linspace(0,1,N,endpoint=False)   # k2 
+            )
+        )
+
+
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
     from mpl_toolkits.mplot3d import Axes3D
@@ -38,9 +49,10 @@ if __name__ == '__main__':
     K1, K2 = np.meshgrid(K1, K2)
 
     E = energy(K1, K2) 
-    for k1, k2 in [(0,0), (1/2,0), (1/2, 1/2)]:
-        print(f1(k1,k2), f2(k1,k2)) 
-        print(energy(k1,k2))
+    from itertools import product
+    N=7
+    np.set_printoptions(precision=4)
+    print(energy(*np.meshgrid(np.linspace(0,1,N,endpoint=False), np.linspace(0,1,N,endpoint=False))))
     exit()
     print(f1(0,1/3), f2(0,1/3))
     print(f1(3/5,1/5), f2(3/5,1/5))

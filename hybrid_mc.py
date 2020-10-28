@@ -15,7 +15,7 @@ To do:
 """
 
 import numpy as np 
-from m_matrix import tau_n2ind, m_matrix_same4all, m_matrix_xi
+from m_matrix import tau_n2ind, m_matrix_same4all, m_matrix_xi, m_matrix_tau_free, ft2d_speedup, m_matrix_tau_shift
 from scipy.sparse.linalg import spsolve, inv, cg, cgs, gcrotmk, splu, bicg, bicgstab, gmres, lgmres, minres, qmr
 from scipy import sparse
 from tqdm import tqdm
@@ -141,7 +141,8 @@ class Trajectory():
             h_start = hamiltonian()  # record the hamiltonian at the beginning
 
             # launch leapfrog algorithm
-            one_step_leapfrog()
+            # one_step_leapfrog()
+            leapfrog()
 
             h_end = hamiltonian()  # record the hamiltonian at the end
             
@@ -306,20 +307,59 @@ class Solution():  # cannot bear passing same arguments, use class instead
         return ret
 
 
-    def calc_two_point(self, burnin=None):
+    def calc_spectra(self, burnin=None):
         r'''
-        Two point function defined in (194). 
+        Use two point function defined in (194) to extract energy spectra. See notes for further info. 
 
-        We need to transform M matrix into reciprocal space, this can be easily seen from a unitary transformation perspective: view Fourier transform as a unitary matrix U, we have 
-            \tilde M = U^{-1} M U, 
-        where U_{ij} = 1/\sqrt{N N} \exp i 2\pi i j /N. 
-
-        In fact, we can unitilize FFT pack to speed up calculation. Furthermore, chiral index complicates the situation. Since intrinsic dimension is two, we would reshape half of vector into a N\times N matrix, invoke ifft2 subroutine, and flatten it once more for sparse solver. Finally we invoke fft2 subroutine for final solution.      
-
-        Actually we are only concerned with diagonal element.    
+        No need to Fourier transform the whole matrix. Only upper right and lower left is needed, and can be preprocessed.    
         '''
 
-        pass
+        if not burnin: 
+            burnin = len(self.traj.xis) // 2 
+
+        act = 20
+        sample = self.traj.xis[burnin::act]
+
+        s1, s2 = m_matrix_tau_free(self.Nt,self.N,self.hat_t,0)
+        e_rl, e_lr = ft2d_speedup(s1, self.Nt, self.N), ft2d_speedup(s2, self.Nt, self.N)
+        tilde_m_mat_indep = m_matrix_tau_shift(self.Nt,self.N,0) \
+                            +sparse.kron(np.array([[0,0],[1,0]]), e_rl) \
+                            +sparse.kron(np.array([[0,1],[0,0]]), e_lr)
+
+        ret = np.zeros((self.N, self.N, self.Nt,), dtype='complex128')
+        for xi in tqdm(sample):
+            tilde_m = tilde_m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi)
+            for k1 in range(self.N): 
+                for k2 in range(self.N):
+                    ind = k1 * self.N + k2
+                    ret[k1,k2] += \
+                        spsolve(
+                            tilde_m[ind::self.N*self.N,ind::self.N*self.N].T,  # solve in one sub-space of k 
+                            np.array([1]+[0]*(2*self.Nt-1))
+                        )[:self.Nt]  # take only first half 
+        ret /= len(sample)  # do average
+                    
+        from scipy.optimize import curve_fit  
+        """
+        import matplotlib.pyplot as plt               
+        for k1 in range(self.N):
+            for k2 in range(self.N):
+                plt.plot(np.log(np.abs(ret[k1, k2])))
+                plt.show()
+        """
+        return np.array(
+            [[(curve_fit(
+                lambda _, a, b, c:a*(_-b)**2+c, np.linspace(0,1,self.Nt), 
+                np.log(
+                    np.abs(
+                        ret[k1, k2]
+                    )
+                )
+            )[0][0]*2)**.5 for k1 in range(self.N)] 
+            for k2 in range(self.N)]
+            )
+      
+            
 
             
     def calc_auto_correlation(self, mapping_func=None, burnin=None):
@@ -367,19 +407,23 @@ def show_single_plot(res):
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt 
-
+    np.set_printoptions(precision=4,linewidth=120)
     # sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=1000)
-    sol = Solution(5,1,1e-2,1e-4, time_step=1, max_epochs=500) 
+    sol = Solution(50, 5, 2e-3, 1e-7, time_step=5e-2, max_epochs=50) 
 
-    # sol.calc_two_point()
 
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
-    print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
+    print('Mean change in Hamiltonian is', np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
+
+    
+    print(sol.calc_spectra()/(50*2e-4))
 
     plt.plot(sol.calc_auto_correlation_with_coarsen(lambda _: _@_))
+    plt.ylabel(r'Blocked sample mean $\sigma^2_{O_B}/N_B$')
+    plt.xlabel('Block size $N_B$')
     plt.show()
     # plt.savefig('norm_bin.png')
-    
+    """
     sol.calc_auto_correlation(mapping_func=lambda _: _)
     plt.figure(figsize=(8,6))
     plt.plot(sol.acf[:200]) 
@@ -400,3 +444,4 @@ if __name__ == '__main__':
     plt.title(r'Mapping function: lambda _: _[0]')
     # plt.show()
     plt.savefig('first_component.png')
+    """

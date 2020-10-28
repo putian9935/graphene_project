@@ -203,12 +203,16 @@ if __name__ == '__main__':
     
     np.set_printoptions(linewidth=120, precision=3)
     # N = Nt = 2 is complicated enough for human eye
-    N, Nt = 2, 2 
+    N, Nt = 3, 2 
+    betat = .05
     
-    for Nt, hat_t in [(10, 3)]:
+    from tqdm import tqdm
+    for Nt in tqdm(range(10,101,10)):
+        N=3
+        Nt=5
         mat_size = N * N * Nt
         lat_size = N * N
-        s1, s2 = m_matrix_tau_free(Nt,N,hat_t,0)
+        s1, s2 = m_matrix_tau_free(Nt,N,betat/Nt,0)
         e_rl, e_lr = ft2d_speedup(s1, Nt, N), ft2d_speedup(s2, Nt, N)
 
         inverted = inv(
@@ -218,7 +222,16 @@ if __name__ == '__main__':
                     ).real.toarray()
         
         import matplotlib.pyplot as plt 
-        
+        plt.imshow(
+                np.log(
+                    np.abs(
+                        inverted[1:mat_size:lat_size,1:mat_size:lat_size]
+                    )
+                ) 
+            )
+        plt.show()
+        input()
+        """
         plt.figure(figsize=(2.3*N,(2.3*N)))
         for k in range(lat_size):
             ax = plt.subplot(N, N, k+1)
@@ -232,17 +245,19 @@ if __name__ == '__main__':
             from energy_band import energy 
             ax.title.set_text(r'$k_1=%d$, $k_2=%d$, $E=%.3f$'%(k//N, k%N, energy(k//N/N, k%N/N)))
 
-        plt.suptitle(r'$N=%d$, $N_t=%d$, $\hat t=%.2f$'%(N, Nt, hat_t))
+        plt.suptitle(r'$N=%d$, $N_t=%d$, $\beta t/N_t=%.4f$'%(N, Nt, betat/Nt))
         plt.tight_layout()
-        plt.savefig(r'N=%dN_t=%dhat_t=%.2f.png'%(N, Nt, hat_t), dpi=400)
-        exit()
+        plt.show()
+        # plt.savefig(r'N=%dN_t=%dhat_t=%.2f.png'%(N, Nt, hat_t), dpi=400)
+        continue
+        """
 
-        plt.scatter(range(Nt),
+        plt.scatter(np.linspace(0,1,Nt),
             np.log(
                 np.abs(
-                    inverted[1:mat_size:lat_size,mat_size+1::lat_size]
+                    inverted[0:mat_size:lat_size,0:mat_size:lat_size]
                 )
-            )[0,:], 
+            )[:,0], 
             label=str(Nt), 
         )
 
@@ -250,18 +265,20 @@ if __name__ == '__main__':
     plt.grid()
     plt.show()
     #plt.savefig('lr.pdf')
-    """
-    print(
+    
+    plt.plot(
         np.log(
             np.abs(
                 inv(
                     m_matrix_tau_shift(Nt,N,0)
                     +sparse.kron(np.array([[0,0],[1,0]]), e_rl)
                     +sparse.kron(np.array([[0,1],[0,0]]), e_lr)
-                )[:mat_size,:mat_size].real.toarray()
+                )[:mat_size:lat_size,:mat_size:lat_size].real.toarray()
             )
-        )[:,0]
+        )[0,:]
     )
+    
+    """
     print(
         np.log(
             np.abs(

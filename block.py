@@ -20,7 +20,7 @@ def linear_blocking(arr):
         [np.array(
                 [arr[k*n:k*n+n].mean() for k in range(len(arr)//n-1)]
             ).var()/(len(arr)//n-2)
-            for n in range(1, len(arr)//100)
+            for n in range(1, len(arr)//50)
         ]
 
 
