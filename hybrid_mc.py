@@ -223,10 +223,19 @@ class TestCorrectness(Trajectory):
         
 
 class Solution():  # cannot bear passing same arguments, use class instead
-    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400, time_step=0.4):
+    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400, time_step=0.4, act=20):
+        ''' Initialise as is ''' 
         self.N, self.Nt = N, Nt
         self.hat_t, self.hat_U = hat_t, hat_U 
+        self.act = act 
         
+        print('''
+Parameters are: N=%d, Nt=%d,  
+                hat t=%.3e, hat U=%.3e, 
+                t=%.3e, U=%.3e,  
+                Epochs=%d, delta t_0=%.3e, act=%d'''
+                 %(N, Nt, hat_t, hat_U, Nt*hat_t, Nt*hat_U, max_epochs,time_step,act))
+
         self._generate_trajectories(max_epochs, time_step)
 
 
@@ -253,9 +262,8 @@ class Solution():  # cannot bear passing same arguments, use class instead
         ret = np.zeros((self.N, self.N))  # a function of R and tau
 
         buf = np.zeros(self.N*self.N*self.Nt*2)
-        act = 40
-
-        sample = self.traj.xis[burnin::act]
+        
+        sample = self.traj.xis[burnin::self.act]
         for xi in tqdm(sample):
             inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
             for tau in range(1, self.Nt-1):      
@@ -288,8 +296,8 @@ class Solution():  # cannot bear passing same arguments, use class instead
         ret = np.zeros((self.N, self.N))  # a function of R and tau
 
         buf = np.zeros(self.N*self.N*self.Nt*2)
-        act = 40
-        sample = self.traj.xis[burnin::act]
+        
+        sample = self.traj.xis[burnin::self.act]
         for xi in tqdm(sample):
             inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
             for tau in range(1, self.Nt-1):      
@@ -317,8 +325,7 @@ class Solution():  # cannot bear passing same arguments, use class instead
         if not burnin: 
             burnin = len(self.traj.xis) // 2 
 
-        act = 20
-        sample = self.traj.xis[burnin::act]
+        sample = self.traj.xis[burnin::self.act]
 
         s1, s2 = m_matrix_tau_free(self.Nt,self.N,self.hat_t,0)
         e_rl, e_lr = ft2d_speedup(s1, self.Nt, self.N), ft2d_speedup(s2, self.Nt, self.N)
@@ -407,9 +414,10 @@ def show_single_plot(res):
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt 
-    np.set_printoptions(precision=4,linewidth=120)
+    np.set_printoptions(precision=4,linewidth=120)  # otherwise you will have a bad time debugging code
     # sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=1000)
-    sol = Solution(50, 5, 2e-3, 1e-7, time_step=5e-2, max_epochs=50) 
+    # sol = Solution(50, 5, 2e-3, 1e-7, time_step=0.3, max_epochs=20000) 
+    sol = Solution(3, 2, 2e-3, 1e-7, time_step=5e-2, max_epochs=50, act=40) 
 
 
     print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
