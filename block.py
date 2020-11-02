@@ -9,6 +9,7 @@ def coarsen(arr):
 
 
 def exponential_blocking(arr):
+    ''' Should not use this one. Too few information '''
     if len(arr) == 1:
         return []
         
@@ -17,10 +18,11 @@ def exponential_blocking(arr):
 
 def linear_blocking(arr):
     return \
-        [np.array(
+        [
+            np.array(
                 [arr[k*n:k*n+n].mean() for k in range(len(arr)//n-1)]
             ).var()/(len(arr)//n-2)
-            for n in range(1, len(arr)//50)
+            for n in range(1, min(len(arr)//20 + 1, 400))
         ]
 
 
