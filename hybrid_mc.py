@@ -20,6 +20,8 @@ from scipy.sparse.linalg import spsolve, inv, cg, cgs, gcrotmk, splu, bicg, bicg
 from scipy import sparse
 from tqdm import tqdm
 
+import pickle 
+
 np.random.seed(42)  # fix seed for reproductibility 
 
 
@@ -52,8 +54,6 @@ class Trajectory():
         # divide by sqrt(2) since eta does not follow standard gaussian 
         self.phi.append(self.m_mat @ np.random.randn(self.half_size * 2) / 2 ** .5)
 
-       
-    
     
     def evolve(self, time_step, max_steps=10):
         """ 
@@ -170,7 +170,7 @@ class Trajectory():
                 
         Trajectory.delta_ham.append(tmp_ham)
 
-                
+
 class TestCorrectness(Trajectory):
     def __init__(self,Nt, N, hat_t, hat_U):
         super().__init__(Nt, N, hat_t, hat_U)
@@ -223,26 +223,40 @@ class TestCorrectness(Trajectory):
         
 
 class Solution():  # cannot bear passing same arguments, use class instead
-    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400, time_step=0.4, act=20):
-        ''' Initialise as is ''' 
+    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400, time_step=0.4, act=20, from_file=False):
+        ''' Initialise as is. Results are always pickled for later ease. ''' 
         self.N, self.Nt = N, Nt
         self.hat_t, self.hat_U = hat_t, hat_U 
         self.act = act 
         
-        print('''
-Parameters are: N=%d, Nt=%d,  
+        
+        print('''Parameters are: N=%d, Nt=%d,  
                 hat t=%.3e, hat U=%.3e, 
                 t=%.3e, U=%.3e,  
                 Epochs=%d, delta t_0=%.3e, act=%d'''
-                 %(N, Nt, hat_t, hat_U, Nt*hat_t, Nt*hat_U, max_epochs,time_step,act))
+                %(N, Nt, hat_t, hat_U, Nt*hat_t, Nt*hat_U, max_epochs,time_step,act))
 
-        self._generate_trajectories(max_epochs, time_step)
+        
+        filename = 'N%dNt%dhatt%.2ehatU%.2ets%.2eact%dep%d.pickle'%(N,Nt,hat_t,hat_U,time_step,act,max_epochs)
+        if not from_file:
+            self._generate_trajectories(max_epochs, time_step)
+            with open(filename, 'wb') as f:
+                pickle.dump(self.traj, f)
+                print('hello')
+        else: 
+            with open(filename, 'rb') as f:
+                self.traj = pickle.load(f)
+                
+                
 
 
     def _generate_trajectories(self, max_epochs, time_step):
         ''' Generate trajectories using HMC ''' 
         self.traj = Trajectory(self.Nt, self.N, self.hat_t, self.hat_U, max_epochs)
         self.traj.evolve(time_step=time_step)
+
+        print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
+        print('Mean change in Hamiltonian is', np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
     
 
     def spin_correl_aa(self, burnin=None):
@@ -366,9 +380,7 @@ Parameters are: N=%d, Nt=%d,
             for k2 in range(self.N)]
             )
       
-            
-
-            
+                     
     def calc_auto_correlation(self, mapping_func=None, burnin=None):
         ''' Calc auto-correlation of function of xi's ''' 
         if not burnin: 
@@ -417,20 +429,20 @@ if __name__ == '__main__':
     np.set_printoptions(precision=4,linewidth=120)  # otherwise you will have a bad time debugging code
     # sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=1000)
     # sol = Solution(50, 5, 2e-3, 1e-7, time_step=0.3, max_epochs=20000) 
-    sol = Solution(3, 2, 2e-3, 1e-7, time_step=5e-2, max_epochs=50, act=40) 
-
-
-    print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
-    print('Mean change in Hamiltonian is', np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
-
     
-    print(sol.calc_spectra()/(50*2e-4))
+    sol = Solution(3,2,2e-3,1e-7, time_step=0.3, max_epochs=50, act=40, from_file=True)
+    
 
+    # act has higher priority 
     plt.plot(sol.calc_auto_correlation_with_coarsen(lambda _: _@_))
     plt.ylabel(r'Blocked sample mean $\sigma^2_{O_B}/N_B$')
     plt.xlabel('Block size $N_B$')
     plt.show()
     # plt.savefig('norm_bin.png')
+
+    
+    print(sol.calc_spectra()/(50*2e-4))
+
     """
     sol.calc_auto_correlation(mapping_func=lambda _: _)
     plt.figure(figsize=(8,6))
