@@ -8,13 +8,19 @@ Jobs done:
 2. Save fixed part M matrix for acceleration;
 
 3. Fix wrong leapfrog (sign before force term); 
+
+==================
+To do:
+1. Merge different statistics into one function 
 """
 
 import numpy as np 
-from m_matrix import tau_n2ind, m_matrix_same4all, m_matrix_xi
+from m_matrix import tau_n2ind, m_matrix_same4all, m_matrix_xi, m_matrix_tau_free, ft2d_speedup, m_matrix_tau_shift
 from scipy.sparse.linalg import spsolve, inv, cg, cgs, gcrotmk, splu, bicg, bicgstab, gmres, lgmres, minres, qmr
 from scipy import sparse
 from tqdm import tqdm
+
+import pickle 
 
 np.random.seed(42)  # fix seed for reproductibility 
 
@@ -48,8 +54,6 @@ class Trajectory():
         # divide by sqrt(2) since eta does not follow standard gaussian 
         self.phi.append(self.m_mat @ np.random.randn(self.half_size * 2) / 2 ** .5)
 
-       
-    
     
     def evolve(self, time_step, max_steps=10):
         """ 
@@ -137,7 +141,8 @@ class Trajectory():
             h_start = hamiltonian()  # record the hamiltonian at the beginning
 
             # launch leapfrog algorithm
-            one_step_leapfrog()
+            # one_step_leapfrog()
+            leapfrog()
 
             h_end = hamiltonian()  # record the hamiltonian at the end
             
@@ -151,18 +156,21 @@ class Trajectory():
             tmp_ham.append(['acc', h_end-h_start])
             
             if h_end < h_start: # exp might overflow
-                self.xis.append(self.xi)
+                self.xis.append(self.xi.copy())  # a copy is necessary
                 continue
             if np.random.random() > np.exp(-h_end + h_start):
                 self.xi = prev_xi  
                 Trajectory.rej_updates += 1
                 tmp_ham[-1][0]='rej'
-                continue
-            self.xis.append(self.xi)
+
+                # no continue here, save all points as sample
+                # continue
+            self.xis.append(self.xi.copy())
+            
                 
         Trajectory.delta_ham.append(tmp_ham)
 
-                
+
 class TestCorrectness(Trajectory):
     def __init__(self,Nt, N, hat_t, hat_U):
         super().__init__(Nt, N, hat_t, hat_U)
@@ -215,21 +223,43 @@ class TestCorrectness(Trajectory):
         
 
 class Solution():  # cannot bear passing same arguments, use class instead
-    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400, time_step=0.4):
+    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400, time_step=0.4, act=20, from_file=False):
+        ''' Initialise as is. Results are always pickled for later ease. ''' 
         self.N, self.Nt = N, Nt
         self.hat_t, self.hat_U = hat_t, hat_U 
+        self.act = act 
         
-        self._generate_trajectories(max_epochs, time_step)
+        
+        print('''Parameters are: N=%d, Nt=%d,  
+                hat t=%.3e, hat U=%.3e, 
+                t=%.3e, U=%.3e,  
+                Epochs=%d, delta t_0=%.3e, act=%d'''
+                %(N, Nt, hat_t, hat_U, Nt*hat_t, Nt*hat_U, max_epochs,time_step,act))
+
+        
+        filename = 'N%dNt%dhatt%.2ehatU%.2ets%.2eact%dep%d.pickle'%(N,Nt,hat_t,hat_U,time_step,act,max_epochs)
+        if not from_file:
+            self._generate_trajectories(max_epochs, time_step)
+            with open(filename, 'wb') as f:
+                pickle.dump(self.traj, f)
+                print('hello')
+        else: 
+            with open(filename, 'rb') as f:
+                self.traj = pickle.load(f)
+                
+                
 
 
     def _generate_trajectories(self, max_epochs, time_step):
         ''' Generate trajectories using HMC ''' 
         self.traj = Trajectory(self.Nt, self.N, self.hat_t, self.hat_U, max_epochs)
         self.traj.evolve(time_step=time_step)
+
+        print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
+        print('Mean change in Hamiltonian is', np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
     
 
-
-    def spin_correl_aa_average_time(self, burnin=None):
+    def spin_correl_aa(self, burnin=None):
         """ 
         Calc observables via eq. (246)
 
@@ -246,9 +276,8 @@ class Solution():  # cannot bear passing same arguments, use class instead
         ret = np.zeros((self.N, self.N))  # a function of R and tau
 
         buf = np.zeros(self.N*self.N*self.Nt*2)
-        act = 40
-
-        sample = self.traj.xis[burnin::act]
+        
+        sample = self.traj.xis[burnin::self.act]
         for xi in tqdm(sample):
             inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
             for tau in range(1, self.Nt-1):      
@@ -262,9 +291,96 @@ class Solution():  # cannot bear passing same arguments, use class instead
                 buf[ind0] = 0
 
         ret /= len(sample) * (self.Nt-2)
-        
+        print(ret[0, 0])
         return ret
 
+
+    def number_correl_aa(self, burnin=None):
+        """ 
+        Calc observables via eq. (204), (205)
+        
+        Imaginary time average is performed from tau = 1 to Nt-1. 
+        """
+        
+        if not burnin: 
+            burnin = len(self.traj.xis) // 2 
+
+        print('Doing statistics...')
+        
+        ret = np.zeros((self.N, self.N))  # a function of R and tau
+
+        buf = np.zeros(self.N*self.N*self.Nt*2)
+        
+        sample = self.traj.xis[burnin::self.act]
+        for xi in tqdm(sample):
+            inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
+            for tau in range(1, self.Nt-1):      
+                ind0 = tau_n2ind(tau, 0, 0, self.N)  # ind0 is irrelevant to n1, n2, thus to indr as well
+                buf[ind0] = 1
+                sol_buf = inv_solver.solve(buf) # thus we can solve for buf once for a fixed tau
+                for n1 in range(self.N):
+                    for n2 in range(self.N):
+                        # this line is effectively an inner product 
+                        ret[n1, n2,] += sol_buf[tau_n2ind(tau+1, n1, n2, self.N)] ** 2
+                buf[ind0] = 0
+
+        ret /= len(sample) * (self.Nt-2)
+        print(ret[0, 0])
+        return ret
+
+
+    def calc_spectra(self, burnin=None):
+        r'''
+        Use two point function defined in (194) to extract energy spectra. See notes for further info. 
+
+        No need to Fourier transform the whole matrix. Only upper right and lower left is needed, and can be preprocessed.    
+        '''
+
+        if not burnin: 
+            burnin = len(self.traj.xis) // 2 
+
+        sample = self.traj.xis[burnin::self.act]
+
+        s1, s2 = m_matrix_tau_free(self.Nt,self.N,self.hat_t,0)
+        e_rl, e_lr = ft2d_speedup(s1, self.Nt, self.N), ft2d_speedup(s2, self.Nt, self.N)
+        tilde_m_mat_indep = m_matrix_tau_shift(self.Nt,self.N,0) \
+                            +sparse.kron(np.array([[0,0],[1,0]]), e_rl) \
+                            +sparse.kron(np.array([[0,1],[0,0]]), e_lr)
+
+        ret = np.zeros((self.N, self.N, self.Nt,), dtype='complex128')
+        for xi in tqdm(sample):
+            tilde_m = tilde_m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi)
+            for k1 in range(self.N): 
+                for k2 in range(self.N):
+                    ind = k1 * self.N + k2
+                    ret[k1,k2] += \
+                        spsolve(
+                            tilde_m[ind::self.N*self.N,ind::self.N*self.N].T,  # solve in one sub-space of k 
+                            np.array([1]+[0]*(2*self.Nt-1))
+                        )[:self.Nt]  # take only first half 
+        ret /= len(sample)  # do average
+                    
+        from scipy.optimize import curve_fit  
+        """
+        import matplotlib.pyplot as plt               
+        for k1 in range(self.N):
+            for k2 in range(self.N):
+                plt.plot(np.log(np.abs(ret[k1, k2])))
+                plt.show()
+        """
+        return np.array(
+            [[(curve_fit(
+                lambda _, a, b, c:a*(_-b)**2+c, np.linspace(0,1,self.Nt), 
+                np.log(
+                    np.abs(
+                        ret[k1, k2]
+                    )
+                )
+            )[0][0]*2)**.5 for k1 in range(self.N)] 
+            for k2 in range(self.N)]
+            )
+      
+                     
     def calc_auto_correlation(self, mapping_func=None, burnin=None):
         ''' Calc auto-correlation of function of xi's ''' 
         if not burnin: 
@@ -281,6 +397,24 @@ class Solution():  # cannot bear passing same arguments, use class instead
         self.acf /= self.acf[0]  # normalize the result         
         
         print('Done! ')
+    
+
+    def calc_auto_correlation_with_coarsen(self, mapping_func=None, burnin=None):
+        ''' Coarsening to determine ac time.  ''' 
+        if not burnin: 
+            burnin = len(self.traj.xis) // 2 
+        if not mapping_func:
+          mapping_func = lambda _: _  
+
+        print('Calculating auto-correlation...')
+        
+        from block import linear_blocking
+        
+        x = linear_blocking(np.array([mapping_func(xi) for xi in self.traj.xis[burnin:]]))  # apply the mapping function
+        
+        print('Done! ')
+        
+        return x 
        
        
 def show_single_plot(res):
@@ -292,15 +426,24 @@ def show_single_plot(res):
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt 
+    np.set_printoptions(precision=4,linewidth=120)  # otherwise you will have a bad time debugging code
+    # sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=1000)
+    # sol = Solution(50, 5, 2e-3, 1e-7, time_step=0.3, max_epochs=20000) 
+    
+    sol = Solution(3,2,2e-3,1e-7, time_step=0.3, max_epochs=50, act=40, from_file=True)
+    
 
-    sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=200)
-
-    print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
-    print(np.array(Trajectory.delta_ham)[...,1].squeeze().astype('float64').mean())
-
-    show_single_plot(sol.spin_correl_aa_average_time())
+    # act has higher priority 
+    plt.plot(sol.calc_auto_correlation_with_coarsen(lambda _: _@_))
+    plt.ylabel(r'Blocked sample mean $\sigma^2_{O_B}/N_B$')
+    plt.xlabel('Block size $N_B$')
+    plt.show()
+    # plt.savefig('norm_bin.png')
 
     
+    print(sol.calc_spectra()/(50*2e-4))
+
+    """
     sol.calc_auto_correlation(mapping_func=lambda _: _)
     plt.figure(figsize=(8,6))
     plt.plot(sol.acf[:200]) 
@@ -321,3 +464,4 @@ if __name__ == '__main__':
     plt.title(r'Mapping function: lambda _: _[0]')
     # plt.show()
     plt.savefig('first_component.png')
+    """
