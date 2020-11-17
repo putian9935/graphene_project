@@ -26,6 +26,23 @@ def linear_blocking(arr):
         ]
 
 
+def linear_blocking_sanity(arr):
+    for n in range(1, min(len(arr)//20 + 1, 400)):
+        print(n)
+        buf = []
+        for k in range(len(arr)//n-1):
+            buf.append(arr[k*n:k*n+n].mean())
+            
+        buf = np.array(buf) 
+        m = buf.mean()
+        print(sum((x-m)*(x-m) for x in buf)/len(buf))
+        print(buf.var())
+        print(len(buf))
+        print(len(arr)//n-2)
+        print(arr[:-1].var()/(len(arr)-1))
+        input()
+    
+
 
 if __name__ == '__main__':
-    print(linear_blocking(np.array(list(range(1000)))))
+    print(linear_blocking_sanity(np.array(list(range(100)))))

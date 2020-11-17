@@ -154,7 +154,9 @@ def m_matrix_tau_shift_smaller(Nt, N, hat_U):
 
 def ft2d_speedup(mat, Nt, N):
     r""" 
-    Fourier transform of a matrix with size (Nt\times N\times N)^2
+    This piece is wrong, DON'T use it unless you know what to expect!
+
+    Fourier transform in real space of a matrix with size (Nt\times N\times N)^2
     """
     from itertools import product
     ret = np.zeros((N*N, N*N), dtype='complex128')
@@ -174,9 +176,9 @@ def ft2d_speedup(mat, Nt, N):
     return sparse.kron(np.eye(Nt), ret).tocsc()
         
 
-def ft2d(mat, Nt, N):
+def ft2d_half(mat, Nt, N):
     r""" 
-    Fourier transform of a matrix with size (Nt\times N\times N)^2
+    Fourier transform in real space of a matrix with size (Nt\times N\times N)^2, thus "half"    
     """
     from itertools import product
     ret = np.zeros((Nt*N*N, Nt*N*N), dtype='complex128')
@@ -197,110 +199,26 @@ def ft2d(mat, Nt, N):
     return ret
         
 
+def ft2d(mat, Nt, N):
+    r""" 
+    Fourier transform in real space of a matrix with size Nt\times N\times N\times 2   
+    """
+    
+    ret = np.zeros((2*N*N*Nt, 2*N*N*Nt), dtype='complex128') 
+    mat_size = N*N*Nt 
+    ret[:mat_size, :mat_size] = ft2d_half(mat[:mat_size, :mat_size], Nt, N)
+    ret[mat_size:, :mat_size] = ft2d_half(mat[mat_size:, :mat_size], Nt, N)
+    ret[:mat_size, mat_size:] = ft2d_half(mat[:mat_size, mat_size:], Nt, N)
+    ret[mat_size:, mat_size:] = ft2d_half(mat[mat_size:, mat_size:], Nt, N)
+    return ret
+        
 if __name__ == '__main__':
 
     from scipy.sparse.linalg import inv
     
     np.set_printoptions(linewidth=120, precision=3)
     # N = Nt = 2 is complicated enough for human eye
-    N, Nt = 3, 2 
+    N, Nt = 1, 4 
     betat = .05
     
-    from tqdm import tqdm
-    for Nt in tqdm(range(10,101,10)):
-        N=3
-        Nt=5
-        mat_size = N * N * Nt
-        lat_size = N * N
-        s1, s2 = m_matrix_tau_free(Nt,N,betat/Nt,0)
-        e_rl, e_lr = ft2d_speedup(s1, Nt, N), ft2d_speedup(s2, Nt, N)
-
-        inverted = inv(
-                        m_matrix_tau_shift(Nt,N,0)
-                        +sparse.kron(np.array([[0,0],[1,0]]), e_rl)
-                        +sparse.kron(np.array([[0,1],[0,0]]), e_lr)
-                    ).real.toarray()
-        
-        import matplotlib.pyplot as plt 
-        plt.imshow(
-                np.log(
-                    np.abs(
-                        inverted[1:mat_size:lat_size,1:mat_size:lat_size]
-                    )
-                ) 
-            )
-        plt.show()
-        input()
-        """
-        plt.figure(figsize=(2.3*N,(2.3*N)))
-        for k in range(lat_size):
-            ax = plt.subplot(N, N, k+1)
-            plt.imshow(
-                np.log(
-                    np.abs(
-                        inverted[k:mat_size:lat_size,k:mat_size:lat_size]
-                    )
-                ) 
-            )
-            from energy_band import energy 
-            ax.title.set_text(r'$k_1=%d$, $k_2=%d$, $E=%.3f$'%(k//N, k%N, energy(k//N/N, k%N/N)))
-
-        plt.suptitle(r'$N=%d$, $N_t=%d$, $\beta t/N_t=%.4f$'%(N, Nt, betat/Nt))
-        plt.tight_layout()
-        plt.show()
-        # plt.savefig(r'N=%dN_t=%dhat_t=%.2f.png'%(N, Nt, hat_t), dpi=400)
-        continue
-        """
-
-        plt.scatter(np.linspace(0,1,Nt),
-            np.log(
-                np.abs(
-                    inverted[0:mat_size:lat_size,0:mat_size:lat_size]
-                )
-            )[:,0], 
-            label=str(Nt), 
-        )
-
-    plt.legend()
-    plt.grid()
-    plt.show()
-    #plt.savefig('lr.pdf')
-    
-    plt.plot(
-        np.log(
-            np.abs(
-                inv(
-                    m_matrix_tau_shift(Nt,N,0)
-                    +sparse.kron(np.array([[0,0],[1,0]]), e_rl)
-                    +sparse.kron(np.array([[0,1],[0,0]]), e_lr)
-                )[:mat_size:lat_size,:mat_size:lat_size].real.toarray()
-            )
-        )[0,:]
-    )
-    
-    """
-    print(
-        np.log(
-            np.abs(
-                inv(
-                    m_matrix_tau_shift(Nt,N,0)
-                    +sparse.kron(np.array([[0,0],[1,0]]), e_rl)
-                    +sparse.kron(np.array([[0,1],[0,0]]), e_lr)
-                )[:mat_size,:mat_size].real.toarray()
-            )
-        )[0,:]
-    )
-    print(
-        np.log(
-            np.abs(
-                inv(
-                    m_matrix_tau_shift(Nt,N,0)
-                    +sparse.kron(np.array([[0,0],[1,0]]), e_rl)
-                    +sparse.kron(np.array([[0,1],[0,0]]), e_lr)
-                )[:mat_size,mat_size:].real.toarray()
-            )
-        )[:,0]
-    )
-    """
-
-        
+    print(m_matrix_same4all(Nt, N, 0.05, 0.).toarray())

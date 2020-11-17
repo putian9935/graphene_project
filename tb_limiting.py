@@ -15,10 +15,11 @@ def quadratic_func(x, a, x0, k):
 def different_Nt():
     ''' Generate quadratic.pdf ''' 
 
-    betat = .09
+    # betat = .09
+    betat = 1.
     
     for N in range(10,51):  
-        if N % 10==0:continue   
+        if N % 10==0: continue   
         Delta = s_mat(N, 0,0) 
         Delta_inv =  np.linalg.inv(Delta) 
         b = betat/N
@@ -46,7 +47,9 @@ def different_Nt():
             label=str(N),
             s=8
         )
-    
+        if N == 50:
+            np.savetxt('buf_must_trivial.csv', np.linalg.inv(Delta-b**2*Delta_inv)[0,:].astype('complex128'), delimiter=',')
+            input('ok')
 
     
     plt.grid()
@@ -55,7 +58,7 @@ def different_Nt():
 
     plt.savefig('quadratic.pdf', )
         
-        
+different_Nt()
 N = 50
 
 betae = 5e-3
