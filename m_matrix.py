@@ -41,15 +41,15 @@ def m_matrix_xi(Nt, N, hat_U, xi):
 
 def m_matrix_same4all(Nt, N, hat_t, hat_U):
     ''' calc xi-independent part of M matrix  '''
-    s1, s2 = m_matrix_tau_free(Nt,N,hat_t,0)
+    s1, s2 = m_matrix_tau_free(Nt,N,hat_t)
     
-    return m_matrix_tau_shift(Nt,N,0) \
+    return m_matrix_tau_shift(Nt,N,hat_U) \
         +sparse.kron(np.array([[0,0],[1,0]]), s1, format='csc') \
         +sparse.kron(np.array([[0,1],[0,0]]), s2, format='csc') \
         +hat_U/2*sparse.eye(2*N*N*Nt, format='csc')
 
 
-def m_matrix_tau_free(Nt, N, hat_t, hat_U):
+def m_matrix_tau_free(Nt, N, hat_t):
     ''' calc xi-independent and tau_free part of M matrix  '''
     from itertools import product
     row = []
@@ -59,7 +59,7 @@ def m_matrix_tau_free(Nt, N, hat_t, hat_U):
     mat_size = N*N*Nt
     lat_size = N*N
 
-    hat_U *= .5  # only half of \hat U appears in eq. (121) 
+    # hat_U *= .5  # only half of \hat U appears in eq. (121) 
     
     for n1, n2 in product(range(N), range(N)):
         # periodic boundary condition, much easier to implement
