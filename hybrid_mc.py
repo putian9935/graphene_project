@@ -348,7 +348,7 @@ class Solution():  # cannot bear passing same arguments, use class instead
         sample = self.traj.xis[burnin::self.act]
 
         s1, s2 = m_matrix_tau_free(self.Nt,self.N,self.hat_t,0)
-        e_rl, e_lr = ft2d_speedup(s1, self.Nt, self.N), ft2d_speedup(s2, self.Nt, self.N)
+        e_rl, e_lr = ft2d_speedup(s1, self.Nt, self.N), ft2d_speedup(s2, self.Nt, self.N)  # ft2d_speedup is not very right
         tilde_m_mat_indep = m_matrix_tau_shift(self.Nt,self.N,0) \
                             +sparse.kron(np.array([[0,0],[1,0]]), e_rl) \
                             +sparse.kron(np.array([[0,1],[0,0]]), e_lr)
@@ -407,6 +407,8 @@ class Solution():  # cannot bear passing same arguments, use class instead
         self.acf /= self.acf[0]  # normalize the result         
         
         print('Done! ')
+
+        return self.acf
     
 
     def calc_auto_correlation_with_coarsen(self, mapping_func=None, burnin=None):
@@ -429,6 +431,9 @@ class Solution():  # cannot bear passing same arguments, use class instead
         print('Done! ')
         
         return x 
+
+    
+    
        
        
 def show_single_plot(res):
