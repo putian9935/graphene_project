@@ -46,8 +46,26 @@ class Verify267(Solution):
 import matplotlib.pyplot as plt
 sol = Verify267(50,5,2e-3,1e-7, time_step=0.22, max_epochs=50000, act=40, from_file=True)
 
+sol.calc_auto_correlation_with_coarsen()
+for act in range(10, 200, 10):
+  print(act, sol.stat(act=act))
+# plt.plot(sol.sx_act())
+# plt.savefig('1.png')
+
+"""
+sol = Verify267(50,5,2e-3,5e-7, time_step=0.25, max_epochs=50000, act=40, from_file=False)
 print(sol.stat())
-"""
 plt.plot(sol.sx_act())
-plt.show()
+plt.savefig('2.png')
+
+sol = Verify267(50,5,2e-3,1e-6, time_step=0.28, max_epochs=50000, act=40, from_file=False)
+print(sol.stat())
+plt.plot(sol.sx_act())
+plt.savefig('3.png')
+
+sol = Verify267(50,5,2e-3,5e-6, time_step=0.29, max_epochs=50000, act=40, from_file=False)
+print(sol.stat())
+plt.plot(sol.sx_act())
+plt.savefig('4.png')
 """
+

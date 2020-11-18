@@ -411,11 +411,13 @@ class Solution():  # cannot bear passing same arguments, use class instead
         return self.acf
     
 
-    def calc_auto_correlation_with_coarsen(self, mapping_func=None, burnin=None):
+    def calc_auto_correlation_with_coarsen(self, mapping_func=None, burnin=None, act=None):
         ''' Coarsening to determine ac time.  ''' 
         if not burnin: 
             burnin = len(self.traj.xis) // 2 
             # burnin=5000
+        if not act:
+            act = self.act
         if not mapping_func:
           mapping_func = lambda _: _  
 
