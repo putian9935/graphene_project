@@ -35,7 +35,8 @@ class Trajectory():
     def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400):
         self.N, self.Nt, self.half_size = N, Nt, N*N*Nt
         self.hat_t, self.hat_U = hat_t, hat_U
-        self.xi = np.random.randn(N*N*Nt*2)
+        # self.xi = np.random.randn(N*N*Nt*2)
+        self.xi = np.random.randn(N*N*Nt*2) / (Nt * hat_t)
         self.xis = []
         self.max_epochs = max_epochs
 
@@ -94,7 +95,7 @@ class Trajectory():
         def hamiltonian():
             ''' calc the hamiltonian according to eq. (219), without the sum of alpha '''
             nonlocal pi
-            # f_mat is always updated before calcing hamiltonian
+            # f_mat, xs is always updated before calcing hamiltonian
             return  .5*(pi@pi+self.xi@self.xi)+sum(phi@x for x, phi in zip(self.xs, self.phi))
 
 
@@ -105,18 +106,14 @@ class Trajectory():
             for _ in range(max_steps - 1):
                 self.xi += pi * time_step 
                 pi += force() * time_step
-                self.xi += pi * time_step 
-                pi += force() * time_step
             self.xi += pi * time_step 
             pi += force() * (time_step / 2)
 
         
-        def few_step_leapfrog():
+        def two_step_leapfrog():
             ''' the leapfrog algorithm ''' 
             nonlocal pi
             pi += force() * (time_step / 2)
-            self.xi += pi * time_step 
-            pi += force() * time_step
             self.xi += pi * time_step 
             pi += force() * time_step
             self.xi += pi * time_step 
@@ -142,7 +139,8 @@ class Trajectory():
 
             # launch leapfrog algorithm
             # one_step_leapfrog()
-            leapfrog()
+            two_step_leapfrog()
+            # leapfrog()
 
             h_end = hamiltonian()  # record the hamiltonian at the end
             
@@ -316,7 +314,7 @@ class Solution():  # cannot bear passing same arguments, use class instead
             inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
             for tau in range(1, self.Nt-1):      
                 ind0 = tau_n2ind(tau, 0, 0, self.N)  # ind0 is irrelevant to n1, n2, thus to indr as well
-                buf[ind0] = 1
+                buf[ind0] = 1.
                 sol_buf = inv_solver.solve(buf) # thus we can solve for buf once for a fixed tau
                 for n1 in range(self.N):
                     for n2 in range(self.N):
@@ -336,13 +334,21 @@ class Solution():  # cannot bear passing same arguments, use class instead
         No need to Fourier transform the whole matrix. Only upper right and lower left is needed, and can be preprocessed.    
         '''
 
+        def no_exception_wrapper(func):
+            def ret_func(*args):
+                try:
+                    return func(*args)
+                except RuntimeError:  # fit failed
+                    return ((np.nan,),)  # simulate [0][0] style
+            return ret_func
+
         if not burnin: 
             burnin = len(self.traj.xis) // 2 
 
         sample = self.traj.xis[burnin::self.act]
 
         s1, s2 = m_matrix_tau_free(self.Nt,self.N,self.hat_t,0)
-        e_rl, e_lr = ft2d_speedup(s1, self.Nt, self.N), ft2d_speedup(s2, self.Nt, self.N)
+        e_rl, e_lr = ft2d_speedup(s1, self.Nt, self.N), ft2d_speedup(s2, self.Nt, self.N)  # ft2d_speedup is not very right
         tilde_m_mat_indep = m_matrix_tau_shift(self.Nt,self.N,0) \
                             +sparse.kron(np.array([[0,0],[1,0]]), e_rl) \
                             +sparse.kron(np.array([[0,1],[0,0]]), e_lr)
@@ -366,10 +372,14 @@ class Solution():  # cannot bear passing same arguments, use class instead
         for k1 in range(self.N):
             for k2 in range(self.N):
                 plt.plot(np.log(np.abs(ret[k1, k2])))
+                plt.title('k1=%d, k2=%d'%(k1, k2))
                 plt.show()
         """
+        np.savetxt('buf_trivial.csv', ret[0, 0],delimiter=',')
+        print(ret[0,0])
+        input()
         return np.array(
-            [[(curve_fit(
+            [[(no_exception_wrapper(curve_fit)(
                 lambda _, a, b, c:a*(_-b)**2+c, np.linspace(0,1,self.Nt), 
                 np.log(
                     np.abs(
@@ -378,7 +388,7 @@ class Solution():  # cannot bear passing same arguments, use class instead
                 )
             )[0][0]*2)**.5 for k1 in range(self.N)] 
             for k2 in range(self.N)]
-            )
+            ) / (self.Nt * self.hat_t)  # divide by t=N_t\times\hat t, to make it invariant 
       
                      
     def calc_auto_correlation(self, mapping_func=None, burnin=None):
@@ -397,12 +407,17 @@ class Solution():  # cannot bear passing same arguments, use class instead
         self.acf /= self.acf[0]  # normalize the result         
         
         print('Done! ')
+
+        return self.acf
     
 
-    def calc_auto_correlation_with_coarsen(self, mapping_func=None, burnin=None):
+    def calc_auto_correlation_with_coarsen(self, mapping_func=None, burnin=None, act=None):
         ''' Coarsening to determine ac time.  ''' 
         if not burnin: 
             burnin = len(self.traj.xis) // 2 
+            # burnin=5000
+        if not act:
+            act = self.act
         if not mapping_func:
           mapping_func = lambda _: _  
 
@@ -411,10 +426,16 @@ class Solution():  # cannot bear passing same arguments, use class instead
         from block import linear_blocking
         
         x = linear_blocking(np.array([mapping_func(xi) for xi in self.traj.xis[burnin:]]))  # apply the mapping function
+        # import matplotlib.pyplot as plt 
         
+        # plt.plot([mapping_func(xi) for xi in self.traj.xis[burnin:]])
+        # plt.show()
         print('Done! ')
         
         return x 
+
+    
+    
        
        
 def show_single_plot(res):
@@ -430,38 +451,47 @@ if __name__ == '__main__':
     # sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=1000)
     # sol = Solution(50, 5, 2e-3, 1e-7, time_step=0.3, max_epochs=20000) 
     
-    sol = Solution(3,2,2e-3,1e-7, time_step=0.3, max_epochs=50, act=40, from_file=True)
-    
+    sol = Solution(50,5,2e-3,1e-7, time_step=0.22, max_epochs=50000, act=40, from_file=True)
+    # sol = Solution(50,5,2e-3, 0., time_step=0.22, max_epochs=100, act=40, from_file=False)  # turn off interaction
 
+    plt.matshow(np.log(sol.number_correl_aa()))
+    plt.show()
+    input()
+    print(sol.calc_spectra())
     # act has higher priority 
     plt.plot(sol.calc_auto_correlation_with_coarsen(lambda _: _@_))
     plt.ylabel(r'Blocked sample mean $\sigma^2_{O_B}/N_B$')
     plt.xlabel('Block size $N_B$')
-    plt.show()
-    # plt.savefig('norm_bin.png')
+    # plt.show()
+    plt.savefig('norm_bin.png')
 
-    
-    print(sol.calc_spectra()/(50*2e-4))
+    plt.plot(sol.calc_auto_correlation_with_coarsen(lambda _: _[0]))
+    plt.ylabel(r'Blocked sample mean $\sigma^2_{O_B}/N_B$')
+    plt.xlabel('Block size $N_B$')
+    # plt.show()
+    plt.savefig('norm_first.png')
 
-    """
+
+    """    
     sol.calc_auto_correlation(mapping_func=lambda _: _)
     plt.figure(figsize=(8,6))
     plt.plot(sol.acf[:200]) 
     plt.title(r'Mapping function: lambda _: _')
-    # plt.show()
-    plt.savefig('itself.png')
+    plt.show()
+    # plt.savefig('itself.png')
     
     sol.calc_auto_correlation(mapping_func=lambda _: _@_)
     plt.figure(figsize=(8,6))
     plt.plot(sol.acf[:200]) 
     plt.title(r'Mapping function: lambda _: _@_')
-    # plt.show()
-    plt.savefig('norm.png')
+    plt.show()
+    # plt.savefig('norm.png')
     
     sol.calc_auto_correlation(mapping_func=lambda _: _[0])
     plt.figure(figsize=(8,6))
     plt.plot(sol.acf[:200]) 
     plt.title(r'Mapping function: lambda _: _[0]')
-    # plt.show()
-    plt.savefig('first_component.png')
+    plt.show()
+    # plt.savefig('first_component.png')
     """
+    
