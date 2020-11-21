@@ -35,8 +35,7 @@ class Trajectory():
     def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400):
         self.N, self.Nt, self.half_size = N, Nt, N*N*Nt
         self.hat_t, self.hat_U = hat_t, hat_U
-        # self.xi = np.random.randn(N*N*Nt*2)
-        self.xi = np.random.randn(N*N*Nt*2) / (Nt * hat_t)
+        self.xi = np.random.randn(N*N*Nt*2)  # the whole purpose of rescaling is to make xi follow gaussian
         self.xis = []
         self.max_epochs = max_epochs
 
@@ -74,18 +73,21 @@ class Trajectory():
 
             """
             # Benchmarking different method
+            # seems different method has different precision, but no matter?
+            
             import time
             print('start_solving')
             for func in [cg, cgs, gcrotmk, bicg, bicgstab, gmres, lgmres, minres, qmr]:
                 tt = time.clock()
-                func(self.f_mat, self.phi[0])
+                x= func(self.f_mat, self.phi[0])[0]
                 print('%s: %.3f'%(func.__name__, time.clock()-tt))
+                print(np.linalg.norm(self.phi[0] - self.f_mat@x))
             input('Finished')
             exit()
             """
 
             for phi in self.phi:
-                self.xs.append(minres(self.f_mat,phi)[0])
+                self.xs.append(bicgstab(self.f_mat,phi)[0])
                 y = self.m_mat.T @ self.xs[-1]  # can't figure out why need a transpose here, but it worked! 
                 ret += 2 * self.hat_U **.5 * (self.xs[-1] * y) # trace is too fancy, simply an element-wise product 
 
@@ -169,73 +171,20 @@ class Trajectory():
         Trajectory.delta_ham.append(tmp_ham)
 
 
-class TestCorrectness(Trajectory):
-    def __init__(self,Nt, N, hat_t, hat_U):
-        super().__init__(Nt, N, hat_t, hat_U)
-        
-        def force(): 
-            ''' calc the force according to eq. (221), with two chiral indices combined '''
-            self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
-            self.f_mat = self.m_mat @ self.m_mat.T
-
-            ret = -self.xi
-            for phi in self.phi:
-                x = spsolve(self.f_mat, phi) 
-                y = self.m_mat.T @ x
-                ret += 2 * self.hat_U **.5 * (x * y) # trace is too fancy, simply an element-wise product 
-
-
-            return ret
-
-
-        def hamiltonian():
-            ''' calc the hamiltonian according to eq. (219), without the sum of alpha '''
-            nonlocal pi
-            # f_mat is always updated before calcing hamiltonian
-            
-            self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
-            self.f_mat = self.m_mat @ self.m_mat.T
-            return  .5*(pi@pi+self.xi@self.xi)+sum(phi@spsolve(self.f_mat, phi) for phi in self.phi)
-
-
-        self._generate_phi()
-        tmp_ham = []
-        
-        prev_xi = self.xi.copy()  # make a copy of previous state in case hamiltonian gets bad 
-
-        pi = np.random.randn(self.half_size * 2)  # random momenta
-        
-        
-        h = hamiltonian()  # record the hamiltonian at the beginning 
-        f = force()
-
-        # perturbation = np.random.randn(self.half_size * 2) / 1e5  
-        perturbation = np.array([1e-3] + [0] *(self.half_size*2-1))
-        self.xi += perturbation 
-
-        h_perturbed = hamiltonian() 
-        
-        print('Delta H computed using definition: ', h_perturbed - h) 
-        
-        print('Delta H computed using derivative: ', -perturbation @ f)
-        
-
 class Solution():  # cannot bear passing same arguments, use class instead
-    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400, time_step=0.4, act=20, from_file=False):
+    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400, time_step=0.4, from_file=False, filename=None):
         ''' Initialise as is. Results are always pickled for later ease. ''' 
         self.N, self.Nt = N, Nt
         self.hat_t, self.hat_U = hat_t, hat_U 
-        self.act = act 
-        
-        
+                
         print('''Parameters are: N=%d, Nt=%d,  
                 hat t=%.3e, hat U=%.3e, 
                 t=%.3e, U=%.3e,  
-                Epochs=%d, delta t_0=%.3e, act=%d'''
-                %(N, Nt, hat_t, hat_U, Nt*hat_t, Nt*hat_U, max_epochs,time_step,act))
+                Epochs=%d, delta t_0=%.3e'''
+                %(N, Nt, hat_t, hat_U, Nt*hat_t, Nt*hat_U, max_epochs,time_step))
 
-        
-        filename = 'N%dNt%dhatt%.2ehatU%.2ets%.2eact%dep%d.pickle'%(N,Nt,hat_t,hat_U,time_step,act,max_epochs)
+        if not filename:
+            filename = 'N%dNt%dhatt%.2ehatU%.2ets%.2eep%d.pickle'%(N,Nt,hat_t,hat_U,time_step,max_epochs)
         if not from_file:
             self._generate_trajectories(max_epochs, time_step)
             with open(filename, 'wb') as f:
@@ -246,7 +195,6 @@ class Solution():  # cannot bear passing same arguments, use class instead
                 self.traj = pickle.load(f)
                 
                 
-
 
     def _generate_trajectories(self, max_epochs, time_step):
         ''' Generate trajectories using HMC ''' 
@@ -275,7 +223,7 @@ class Solution():  # cannot bear passing same arguments, use class instead
 
         buf = np.zeros(self.N*self.N*self.Nt*2)
         
-        sample = self.traj.xis[burnin::self.act]
+        sample = self.traj.xis[burnin:]
         for xi in tqdm(sample):
             inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
             for tau in range(1, self.Nt-1):      
@@ -309,7 +257,7 @@ class Solution():  # cannot bear passing same arguments, use class instead
 
         buf = np.zeros(self.N*self.N*self.Nt*2)
         
-        sample = self.traj.xis[burnin::self.act]
+        sample = self.traj.xis[burnin:]
         for xi in tqdm(sample):
             inv_solver = splu(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi))
             for tau in range(1, self.Nt-1):      
@@ -345,9 +293,9 @@ class Solution():  # cannot bear passing same arguments, use class instead
         if not burnin: 
             burnin = len(self.traj.xis) // 2 
 
-        sample = self.traj.xis[burnin::self.act]
+        sample = self.traj.xis[burnin:]
 
-        s1, s2 = m_matrix_tau_free(self.Nt,self.N,self.hat_t,0)
+        s1, s2 = m_matrix_tau_free(self.Nt,self.N,self.hat_t)
         e_rl, e_lr = ft2d_speedup(s1, self.Nt, self.N), ft2d_speedup(s2, self.Nt, self.N)  # ft2d_speedup is not very right
         tilde_m_mat_indep = m_matrix_tau_shift(self.Nt,self.N,0) \
                             +sparse.kron(np.array([[0,0],[1,0]]), e_rl) \
@@ -411,25 +359,20 @@ class Solution():  # cannot bear passing same arguments, use class instead
         return self.acf
     
 
-    def calc_auto_correlation_with_coarsen(self, mapping_func=None, burnin=None, act=None):
+    def calc_auto_correlation_with_coarsen(self, mapping_func=None, burnin=None):
         ''' Coarsening to determine ac time.  ''' 
         if not burnin: 
             burnin = len(self.traj.xis) // 2 
             # burnin=5000
-        if not act:
-            act = self.act
         if not mapping_func:
           mapping_func = lambda _: _  
 
-        print('Calculating auto-correlation...')
+        print('Calculating auto-correlation with linear coarsening...')
         
         from block import linear_blocking
         
         x = linear_blocking(np.array([mapping_func(xi) for xi in self.traj.xis[burnin:]]))  # apply the mapping function
-        # import matplotlib.pyplot as plt 
         
-        # plt.plot([mapping_func(xi) for xi in self.traj.xis[burnin:]])
-        # plt.show()
         print('Done! ')
         
         return x 
@@ -451,7 +394,7 @@ if __name__ == '__main__':
     # sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=1000)
     # sol = Solution(50, 5, 2e-3, 1e-7, time_step=0.3, max_epochs=20000) 
     
-    sol = Solution(50,5,2e-3,1e-7, time_step=0.22, max_epochs=50000, act=40, from_file=True)
+    sol = Solution(50,5,2e-3,1e-7, time_step=0.22, max_epochs=50000, from_file=True)
     # sol = Solution(50,5,2e-3, 0., time_step=0.22, max_epochs=100, act=40, from_file=False)  # turn off interaction
 
     plt.matshow(np.log(sol.number_correl_aa()))
