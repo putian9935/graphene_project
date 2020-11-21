@@ -45,8 +45,8 @@ def m_matrix_same4all(Nt, N, hat_t, hat_U):
     
     return m_matrix_tau_shift(Nt,N,hat_U) \
         +sparse.kron(np.array([[0,0],[1,0]]), s1, format='csc') \
-        +sparse.kron(np.array([[0,1],[0,0]]), s2, format='csc') \
-        +hat_U/2*sparse.eye(2*N*N*Nt, format='csc')
+        +sparse.kron(np.array([[0,1],[0,0]]), s2, format='csc')
+        # +hat_U/2*sparse.eye(2*N*N*Nt, format='csc')
 
 
 def m_matrix_tau_free(Nt, N, hat_t):
@@ -99,7 +99,10 @@ def m_matrix_tau_shift(Nt, N, hat_U):
 
     mat_size = N*N*Nt
 
-    hat_U *= .5  # only half of \hat U appears in eq. (121) 
+    # hat_U *= .5  
+    # only half of \hat U appears in eq. (121), 
+    # yet \hat U as whole appeared in eq. (248), 
+    # however, only (248) is the correct matrix    
      
     # take care of the anti-periodic boundary condition 
     # pay attention to the function call val.extend

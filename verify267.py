@@ -18,13 +18,14 @@ class Verify267(Solution):
 
     def __init__(self,*args, **kwargs):
         super().__init__(*args, **kwargs)  # actually does the dirty job 
+        self.mat_size = self.N*self.N*self.Nt
     
 
     def sx_act(self):
         """
         Calculate auto-correlation time with coarsening
         """
-        return self.calc_auto_correlation(lambda _: np.sum(_)/2.) 
+        return self.calc_auto_correlation_with_coarsen(lambda _: np.sum(_)/2./ self.mat_size) 
 
 
     def stat(self, burnin=None):
@@ -36,21 +37,42 @@ class Verify267(Solution):
 
         print('Doing statistics...')
         
-        sample = self.traj.xis[burnin::self.act] 
+        sample = self.traj.xis[burnin:] 
+        from math import fsum 
+        return fsum(np.sum(xi) / 2. / self.mat_size for xi in sample) / len(sample)  # better use a more stable summing algorithm
 
-        ret = 0. 
-        for xi in sample:
-            ret += np.sum(xi) / 2. 
-        return ret 
+
+
+def f265(Nt, N, hat_t, hat_U):
+    '''
+    Function F(U) defined in eq. (265);
+
+    Numerically, I would say the following code is completely wrong when Nt is large;
+    so there's a mma counterpart of it.
+    ''' 
+    from energy_band import energy 
+
+    ret = 0.
+    for k1 in range(N):  # sum over k space 
+        for k2 in range(N):
+            ret += (1 - hat_U +hat_t*energy(k1/N, k2/N))**(Nt-1) / (1+(1 - hat_U +hat_t*energy(k1/N, k2/N))**Nt)  # one chiral index 
+            ret += (1 - hat_U -hat_t*energy(k1/N, k2/N))**(Nt-1) / (1+(1 - hat_U -hat_t*energy(k1/N, k2/N))**Nt)  # the other index, with opposite energy 
+    ret /= N * N 
+    
+    return ret 
 
 import matplotlib.pyplot as plt
-sol = Verify267(50,5,2e-3,1e-7, time_step=0.22, max_epochs=50000, act=40, from_file=True)
+sol = Verify267(50,5,2e-3,1e-7, time_step=0.22, max_epochs=50000, 
+    from_file=False, 
+    # filename='N5Nt50hatt2.00e-03hatU1.00e-07ts2.20e-01act40ep50000.pickle'
+)
 
-sol.calc_auto_correlation_with_coarsen()
-for act in range(10, 200, 10):
-  print(act, sol.stat(act=act))
-# plt.plot(sol.sx_act())
-# plt.savefig('1.png')
+
+print("Simulation yields: ", sol.stat())
+print("Theory predicts:", f265(50,5,2e-3,1e-7, )*np.sqrt(1e-7))
+
+plt.plot(sol.sx_act())
+plt.savefig('1.png')
 
 """
 sol = Verify267(50,5,2e-3,5e-7, time_step=0.25, max_epochs=50000, act=40, from_file=False)
