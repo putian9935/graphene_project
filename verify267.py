@@ -41,6 +41,20 @@ class Verify267(Solution):
         from math import fsum 
         return fsum(np.sum(xi) / 2. / self.mat_size for xi in sample) / len(sample)  # better use a more stable summing algorithm
 
+    def stat_anti(self, burnin=None):
+        """
+        Calculate the ensemble average of S_x
+        """
+        if not burnin: 
+            burnin = len(self.traj.xis) // 2 
+
+        print('Doing statistics...')
+        
+        sample = self.traj.xis[burnin:] 
+        from math import fsum 
+        return fsum((np.sum(xi[:self.mat_size])-np.sum(xi[self.mat_size:])) / 2. / self.mat_size for xi in sample) / len(sample)  # better use a more stable summing algorithm
+
+
 
 
 def f265(Nt, N, hat_t, hat_U):
@@ -62,18 +76,32 @@ def f265(Nt, N, hat_t, hat_U):
     return ret 
 
 import matplotlib.pyplot as plt
-sol = Verify267(50,5,2e-3,1e-7, time_step=0.22, max_epochs=50000, 
+
+hatu=2e-6
+ts = .38
+
+sol = Verify267(10,3,2e-3,hatu, time_step=ts, max_epochs=80000, 
     from_file=False, 
     # filename='N5Nt50hatt2.00e-03hatU1.00e-07ts2.20e-01act40ep50000.pickle'
 )
 
-
 print("Simulation yields: ", sol.stat())
-print("Theory predicts:", f265(50,5,2e-3,1e-7, )*np.sqrt(1e-7))
+print("Theory predicts:", -f265(10,3,2e-3,hatu, )*np.sqrt(hatu))
 
 plt.plot(sol.sx_act())
 plt.savefig('1.png')
 
+
+sol = Verify267(10,3,2e-3,hatu, time_step=ts, max_epochs=80000, 
+    from_file=False, 
+    # filename='N5Nt50hatt2.00e-03hatU1.00e-07ts2.20e-01act40ep50000.pickle'
+)
+
+print("Simulation yields: ", sol.stat())
+print("Theory predicts:", -f265(10,3,2e-3,hatu, )*np.sqrt(hatu))
+
+plt.plot(sol.sx_act())
+plt.savefig('2.png')
 """
 sol = Verify267(50,5,2e-3,5e-7, time_step=0.25, max_epochs=50000, act=40, from_file=False)
 print(sol.stat())

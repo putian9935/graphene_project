@@ -38,6 +38,8 @@ class Trajectory():
         self.xi = np.random.randn(N*N*Nt*2)  # the whole purpose of rescaling is to make xi follow gaussian
         self.xis = []
         self.max_epochs = max_epochs
+        
+        self.m_mat_indep = m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,)
 
     def _generate_phi(self):
         ''' Generate phi vector according to eq. (163) '''
@@ -47,15 +49,19 @@ class Trajectory():
         # Few necessary initialization
         self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
         self.f_mat = self.m_mat @ self.m_mat.T
-        self.xs = []
-        for phi in self.phi:
-            self.xs.append(spsolve(self.f_mat, phi))
 
         # divide by sqrt(2) since eta does not follow standard gaussian 
         self.phi.append(self.m_mat @ np.random.randn(self.half_size * 2) / 2 ** .5)
+        self.phi.append(self.m_mat @ np.random.randn(self.half_size * 2) / 2 ** .5)
+
+        
+        self.xs = []
+        for phi in self.phi:
+            self.xs.append(bicgstab(self.f_mat,phi)[0])
+
 
     
-    def evolve(self, time_step, max_steps=10):
+    def evolve(self, time_step, max_steps=3):
         """ 
         Evolve using leapfrog algorithm introduced on page 28;
         After this function call, self will be equipped with M matrix.
@@ -130,25 +136,29 @@ class Trajectory():
             pi += force() * (time_step / 2)
 
 
-        self._generate_phi()
         tmp_ham = []
         for epoch in tqdm(range(self.max_epochs)):
             prev_xi = self.xi.copy()  # make a copy of previous state in case hamiltonian gets bad 
 
+            self._generate_phi()
+
             pi = np.random.randn(self.half_size * 2)  # random momenta
-            
+            # print(pi[:10], self.phi[0][:10],self.phi[1][:10])
+            # print(self.xi[:10])
             h_start = hamiltonian()  # record the hamiltonian at the beginning
 
             # launch leapfrog algorithm
             # one_step_leapfrog()
-            two_step_leapfrog()
-            # leapfrog()
+            # two_step_leapfrog()
+            leapfrog()
 
             h_end = hamiltonian()  # record the hamiltonian at the end
-            
+            # print(pi[:10], self.phi[0][:10],self.phi[1][:10])
+            # print(self.xi[:10])
             # two components of xi, phi are independent, 
             # so it's cool to accept one update while rejecting another
-
+            # print(h_start, h_end) 
+            # input()
             Trajectory.tot_updates += 1
             # for visualization 
             # tmp_ham.append(['acc', h_end-h_start, prev_xi.copy(), self.xi.copy()])
