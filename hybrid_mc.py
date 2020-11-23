@@ -57,7 +57,6 @@ class Trajectory():
     def _generate_phi(self):
         ''' Generate phi vector according to eq. (163) '''
         self.phi = []  # make a list for good iteration
-        self.m_mat_indep = m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,)
 
         # Few necessary initialization
         self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
