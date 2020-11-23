@@ -38,8 +38,12 @@ class Trajectory():
         self.xi = np.random.randn(N*N*Nt*2)  # the whole purpose of rescaling is to make xi follow gaussian
         self.xis = []
         self.max_epochs = max_epochs
-        
         self.m_mat_indep = m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,)
+
+        if self.N * self.N * self.Nt * 2 < 500:
+            self.solver = cgs 
+        else: 
+            self.solver = bicgstab
 
     def _generate_phi(self):
         ''' Generate phi vector according to eq. (163) '''
@@ -57,10 +61,36 @@ class Trajectory():
         
         self.xs = []
         for phi in self.phi:
-            self.xs.append(bicgstab(self.f_mat,phi)[0])
+            self.xs.append(self.solver(self.f_mat,phi)[0])
 
 
-    
+    def _benchmark_solver(self):
+        """
+        Benchmarking different solver
+        seems different method has different precision, but no matter?
+        """
+
+        import time
+        print('Start solving')
+        for func in [cg, cgs, gcrotmk, bicg, bicgstab, gmres, lgmres, minres, qmr]:
+            tt = time.clock()
+            x= func(self.f_mat, self.phi[0])[0]
+            print('%s: %.4f'%(func.__name__, time.clock()-tt))
+            print(np.linalg.norm(self.phi[0] - self.f_mat@x))
+        
+        tt = time.clock()
+        x= spsolve(self.f_mat, self.phi[0])
+        print('%s: %.4f'%(spsolve.__name__, time.clock()-tt))
+        print(np.linalg.norm(self.phi[0] - self.f_mat@x))
+
+        a = self.f_mat.toarray()
+        tt = time.clock()
+        x = np.linalg.solve(a, self.phi[0])
+        print('%s: %.4f'%(np.linalg.solve.__name__, time.clock()-tt))
+        print(np.linalg.norm(self.phi[0] - self.f_mat@x))
+        input('Finished')
+        exit()  # no need 
+
     def evolve(self, time_step, max_steps=3):
         """ 
         Evolve using leapfrog algorithm introduced on page 28;
@@ -73,27 +103,13 @@ class Trajectory():
             ''' calc the force according to eq. (221), with two chiral indices combined '''
             self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
             self.f_mat = self.m_mat @ self.m_mat.T
+
+            # self._benchmark_solver()  # add benchmark here
+
             self.xs = []
-
-            ret = -self.xi
-
-            """
-            # Benchmarking different method
-            # seems different method has different precision, but no matter?
-            
-            import time
-            print('start_solving')
-            for func in [cg, cgs, gcrotmk, bicg, bicgstab, gmres, lgmres, minres, qmr]:
-                tt = time.clock()
-                x= func(self.f_mat, self.phi[0])[0]
-                print('%s: %.3f'%(func.__name__, time.clock()-tt))
-                print(np.linalg.norm(self.phi[0] - self.f_mat@x))
-            input('Finished')
-            exit()
-            """
-
+            ret = -self.xi            
             for phi in self.phi:
-                self.xs.append(bicgstab(self.f_mat,phi)[0])
+                self.xs.append(self.solver(self.f_mat,phi)[0])
                 y = self.m_mat.T @ self.xs[-1]  # can't figure out why need a transpose here, but it worked! 
                 ret += 2 * self.hat_U **.5 * (self.xs[-1] * y) # trace is too fancy, simply an element-wise product 
 
