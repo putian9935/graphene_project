@@ -77,28 +77,29 @@ def f265(Nt, N, hat_t, hat_U):
 
 import matplotlib.pyplot as plt
 
-hatu=2e-6
-ts = .38
+hatu=2e-4
+hatt=2e-2
+ts = .3
 
-sol = Verify267(10,3,2e-3,hatu, time_step=ts, max_epochs=80000, 
+sol = Verify267(10,3,hatt,hatu, time_step=ts, max_epochs=2000, 
     from_file=False, 
     # filename='N5Nt50hatt2.00e-03hatU1.00e-07ts2.20e-01act40ep50000.pickle'
 )
 
 print("Simulation yields: ", sol.stat())
-print("Theory predicts:", -f265(10,3,2e-3,hatu, )*np.sqrt(hatu))
+print("Theory predicts:", -f265(10,3,hatt,hatu, )*np.sqrt(hatu))
 
 plt.plot(sol.sx_act())
 plt.savefig('1.png')
 
 
-sol = Verify267(10,3,2e-3,hatu, time_step=ts, max_epochs=80000, 
+sol = Verify267(10,3,hatt,hatu, time_step=ts, max_epochs=50000, 
     from_file=False, 
     # filename='N5Nt50hatt2.00e-03hatU1.00e-07ts2.20e-01act40ep50000.pickle'
 )
 
 print("Simulation yields: ", sol.stat())
-print("Theory predicts:", -f265(10,3,2e-3,hatu, )*np.sqrt(hatu))
+print("Theory predicts:", -f265(10,3,hatt,hatu, )*np.sqrt(hatu))
 
 plt.plot(sol.sx_act())
 plt.savefig('2.png')
