@@ -40,11 +40,12 @@ class Trajectory():
         self.max_epochs = max_epochs
         self.m_mat_indep = m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,)
 
+        self.pre_cond = inv(self.m_mat_indep @ self.m_mat_indep.T) # preconditioning matrix, see module precondition_test.py
         
         if self.half_size * 2 < 500:  # choose matrix solver
-            self.solver = cgs 
+            self.solver = lambda _, __: cgs(_, __, M=self.pre_cond)  # maybe should use a closure, yet no matter
         else: 
-            self.solver = bicgstab  # using bicgstab is mainly an accuracy consideration
+            self.solver = lambda _, __: bicgstab(_, __, M=self.pre_cond) # using bicgstab is mainly an accuracy/efficiency tradeoff
 
         if self.half_size * 2 < 10000:  # choose random number gen
             self.rand_gen = lambda : np.random.randn(N*N*Nt*2) 
@@ -233,11 +234,12 @@ class Solution():  # cannot bear passing same arguments, use class instead
 
         if not filename:
             filename = 'N%dNt%dhatt%.2ehatU%.2ets%.2eep%d.pickle'%(N,Nt,hat_t,hat_U,time_step,max_epochs)
+        
         if not from_file:
             self._generate_trajectories(max_epochs, time_step)
-            with open(filename, 'wb') as f:
-                pickle.dump(self.traj, f)
-                print('hello')
+            # with open(filename, 'wb') as f:
+            #     pickle.dump(self.traj, f)
+            #     print('hello')
         else: 
             with open(filename, 'rb') as f:
                 self.traj = pickle.load(f)
