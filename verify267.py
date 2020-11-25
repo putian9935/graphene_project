@@ -75,48 +75,34 @@ def f265(Nt, N, hat_t, hat_U):
     
     return ret 
 
-import matplotlib.pyplot as plt
 
-hatu=2e-4
-hatt=2e-2
-ts = .3
+if __name__ == '__main__':
+    import matplotlib.pyplot as plt
 
-sol = Verify267(10,3,hatt,hatu, time_step=ts, max_epochs=2000, 
-    from_file=False, 
-    # filename='N5Nt50hatt2.00e-03hatU1.00e-07ts2.20e-01act40ep50000.pickle'
-)
+    hatu=2e-4
+    hatt=2e-2
+    ts = .3
 
-print("Simulation yields: ", sol.stat())
-print("Theory predicts:", -f265(10,3,hatt,hatu, )*np.sqrt(hatu))
+    sol = Verify267(10,3,hatt,hatu, time_step=ts, max_epochs=2000, 
+        from_file=False, 
+        # filename='N5Nt50hatt2.00e-03hatU1.00e-07ts2.20e-01act40ep50000.pickle'
+    )
 
-plt.plot(sol.sx_act())
-plt.savefig('1.png')
+    print("Simulation yields: ", sol.stat())
+    print("Theory predicts:", -f265(10,3,hatt,hatu, )*np.sqrt(hatu))
+
+    plt.plot(sol.sx_act())
+    plt.savefig('1.png')
 
 
-sol = Verify267(10,3,hatt,hatu, time_step=ts, max_epochs=50000, 
-    from_file=False, 
-    # filename='N5Nt50hatt2.00e-03hatU1.00e-07ts2.20e-01act40ep50000.pickle'
-)
+    sol = Verify267(10,3,hatt,hatu, time_step=ts, max_epochs=50000, 
+        from_file=False, 
+        # filename='N5Nt50hatt2.00e-03hatU1.00e-07ts2.20e-01act40ep50000.pickle'
+    )
 
-print("Simulation yields: ", sol.stat())
-print("Theory predicts:", -f265(10,3,hatt,hatu, )*np.sqrt(hatu))
+    print("Simulation yields: ", sol.stat())
+    print("Theory predicts:", -f265(10,3,hatt,hatu, )*np.sqrt(hatu))
 
-plt.plot(sol.sx_act())
-plt.savefig('2.png')
-"""
-sol = Verify267(50,5,2e-3,5e-7, time_step=0.25, max_epochs=50000, act=40, from_file=False)
-print(sol.stat())
-plt.plot(sol.sx_act())
-plt.savefig('2.png')
-
-sol = Verify267(50,5,2e-3,1e-6, time_step=0.28, max_epochs=50000, act=40, from_file=False)
-print(sol.stat())
-plt.plot(sol.sx_act())
-plt.savefig('3.png')
-
-sol = Verify267(50,5,2e-3,5e-6, time_step=0.29, max_epochs=50000, act=40, from_file=False)
-print(sol.stat())
-plt.plot(sol.sx_act())
-plt.savefig('4.png')
-"""
-
+    plt.plot(sol.sx_act())
+    plt.savefig('2.png')
+    
