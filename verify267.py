@@ -79,11 +79,11 @@ def f265(Nt, N, hat_t, hat_U):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt
 
-    hatu=2e-4
-    hatt=2e-2
+    hatu=.9
+    hatt=.2
     ts = .3
 
-    sol = Verify267(10,3,hatt,hatu, time_step=ts, max_epochs=2000, 
+    sol = Verify267(10,4,hatt,hatu, time_step=ts, max_epochs=2000, 
         from_file=False, 
         # filename='N5Nt50hatt2.00e-03hatU1.00e-07ts2.20e-01act40ep50000.pickle'
     )
@@ -95,7 +95,7 @@ if __name__ == '__main__':
     plt.savefig('1.png')
 
 
-    sol = Verify267(10,3,hatt,hatu, time_step=ts, max_epochs=50000, 
+    sol = Verify267(10,4,hatt,hatu, time_step=ts, max_epochs=50000, 
         from_file=False, 
         # filename='N5Nt50hatt2.00e-03hatU1.00e-07ts2.20e-01act40ep50000.pickle'
     )

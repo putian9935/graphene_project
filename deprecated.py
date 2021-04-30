@@ -320,6 +320,42 @@ def m_matrix_same4all_wrong(Nt, N, hat_t, hat_U):
     return sparse.csc_matrix((val, (row, col)), shape=(Nt*N*N*2, Nt*N*N*2), dtype=float)
 
 
+
+class PreconditionTestM():
+    def __init__(self, Nt, N, hat_t, hat_u):
+        self.Nt = Nt 
+        self.N = N 
+        self.hat_t = hat_t 
+        self.hat_u = hat_u
+        self.m_mat_indep = m_matrix_same4all(Nt, N, hat_t, hat_u)
+        self.mat_size = Nt * N * N 
+        self.phi = self.m_mat_indep @ np.random.random(self.mat_size * 2)
+        self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_u, np.random.random(self.mat_size * 2)) 
+        plt.show(self.m_mat)
+        self.m_mat_inv = inv(self.m_mat_indep)
+        
+
+    
+    def _solve_with_pc(self):
+        return cg(self.m_mat, self.phi, M=self.m_mat_inv)
+        # return cg(self.m_mat, self.phi, M=self.m_mat_indep.T)
+    
+    def _solve_without_pc(self):
+        return cg(self.m_mat, self.phi)
+    
+    def benchmark(self):
+        tt = perf_counter()
+        for _ in range(20):
+            self._solve_without_pc()
+        print('Without preconditioning: ', perf_counter() - tt)
+
+        tt = perf_counter()
+        for _ in range(20):
+            self._solve_with_pc()
+        print('With preconditioning:    ', perf_counter() - tt)
+
+
+
 if __name__ == '__main__':
     from m_matrix import tau_n2ind 
     prop2sigma1_old(5,2,1e-2,0)

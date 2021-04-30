@@ -15,16 +15,17 @@ To do:
 """
 
 import numpy as np 
-from m_matrix import tau_n2ind, m_matrix_same4all, m_matrix_xi, m_matrix_tau_free, ft2d_speedup, m_matrix_tau_shift
+from m_matrix import tau_n2ind, m_matrix_shifted_same4all,  m_matrix_same4all, m_matrix_xi, m_matrix_tau_free, ft2d_speedup, m_matrix_tau_shift
 from scipy.sparse.linalg import spsolve, inv, cg, cgs, gcrotmk, splu, bicg, bicgstab, gmres, lgmres, minres, qmr
 from scipy import sparse
 from tqdm import tqdm
-
+# from sparse_dot_mkl import sparse_qr_solve_mkl
+# from scikits.umfpack import spsolve
 import pickle 
 
-np.random.seed(42)  # fix seed for reproductibility 
+#np.random.seed(102)  # fix seed for reproductibility 
 
-
+# m_matrix_same4all = m_matrix_shifted_same4all
 class Trajectory():
     """
     Save a single trajectory of Markov chain.
@@ -38,12 +39,14 @@ class Trajectory():
         self.xi = np.random.randn(N*N*Nt*2)  # the whole purpose of rescaling is to make xi follow gaussian
         self.xis = []
         self.max_epochs = max_epochs
-        self.m_mat_indep = m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,)
+        self.m_mat_indep = m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,).tocsc()
 
         self.pre_cond = inv(self.m_mat_indep @ self.m_mat_indep.T) # preconditioning matrix, see module precondition_test.py
         
+        # self.pre_cond = sparse.eye(2*N*N*Nt)
         if self.half_size * 2 < 500:  # choose matrix solver
             self.solver = lambda _, __: cgs(_, __, M=self.pre_cond)  # maybe should use a closure, yet no matter
+            # self.solver = lambda _, __: (sparse_qr_solve_mkl(_, __),)
         else: 
             self.solver = lambda _, __: bicgstab(_, __, M=self.pre_cond) # using bicgstab is mainly an accuracy/efficiency tradeoff
 
@@ -83,8 +86,8 @@ class Trajectory():
         print('Start solving')
         for func in [cg, cgs, gcrotmk, bicg, bicgstab, gmres, lgmres, minres, qmr]:
             tt = time.clock()
-            x= func(self.f_mat, self.phi[0])[0]
-            print('%s: %.4f'%(func.__name__, time.clock()-tt))
+            x, info= func(self.f_mat, self.phi[0])
+            print('%s: %.4f %d'%(func.__name__, time.clock()-tt, info))
             print(np.linalg.norm(self.phi[0] - self.f_mat@x))
         """
         # Exact method, very slow at large size
@@ -440,6 +443,9 @@ def show_single_plot(res):
 
 if __name__ == '__main__':
     import matplotlib.pyplot as plt 
+
+    sol = Solution(10,3,.2,.6, time_step=0.22, max_epochs=100,)
+
     np.set_printoptions(precision=4,linewidth=120)  # otherwise you will have a bad time debugging code
     # sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=1000)
     # sol = Solution(50, 5, 2e-3, 1e-7, time_step=0.3, max_epochs=20000) 
