@@ -23,7 +23,8 @@ class PreconditionTestF():
         self.m_mat_indep = m_matrix_shifted_same4all(Nt, N, hat_t, hat_u)
         self.mat_size = Nt * N * N 
         self.phi = self.m_mat_indep @ np.random.random(self.mat_size * 2)
-        self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_u, np.random.random(self.mat_size * 2)) 
+        xi = np.random.random(self.mat_size * 2)
+        self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_u, xi) 
         # show_mat(self.m_mat_indep)
         # self.f_mat_indep = self.m_mat_indep @ self.m_mat_indep.T
         
@@ -36,8 +37,11 @@ class PreconditionTestF():
         import scipy.sparse as sparse
         M_x = lambda x: spla.spsolve(self.f_mat_indep, x)
         self.f_mat_inv_op = spla.LinearOperator((2*N*N*Nt, 2*N*N*Nt), M_x)
-        self.f_mat_inv = inv(self.m_mat_zero_t @ self.m_mat_zero_t.T + sparse.eye(2*N*N*Nt)*.1)
+        self.f_mat_inv = inv(sparse.diags((xi*hat_u**.5-1)**2+1.2, format='csc')).tocsc()
         
+        # self.f_mat_inv = spla.LinearOperator((2*N*N*Nt, 2*N*N*Nt), lambda x: x/((xi*hat_u**.5-1)**2+1.))
+        # self.f_mat_inv = inv(self.m_mat_indep @ self.m_mat_indep.T)
+        # self.f_mat_inv = sparse.eye(2*N*N*Nt)
         print(np.linalg.cond(self.m_mat.toarray()))
         print(np.linalg.cond((self.m_mat @ self.m_mat.T).toarray()))
 
@@ -50,12 +54,12 @@ class PreconditionTestF():
     def _solve_without_pc(self):
         f_mat = self.m_mat @ self.m_mat.T  # this is always done, actaully only once 
         self.iter = 0
-        return cg(f_mat, self.phi, callback = self.call_back)
+        return cgs(f_mat, self.phi, callback = self.call_back)
     
     def _solve_with_pc(self):
         f_mat = self.m_mat @ self.m_mat.T  # this is always done, actaully only once
         self.iter = 0
-        return cg(f_mat, self.phi, M=self.f_mat_inv, callback=self.call_back)
+        return cgs(f_mat, self.phi, M=self.f_mat_inv, callback=self.call_back)
     
 
     def benchmark(self):
@@ -74,7 +78,7 @@ class PreconditionTestF():
         f_mat = (self.m_mat @ self.m_mat.T).toarray()
         self.iter = 0
         for _ in range(20):
-            cg(f_mat, self.phi,callback = self.call_back)
+            cgs(f_mat, self.phi,callback = self.call_back)
         print('Without preconditioning (dense): ', perf_counter() - tt, '\n# of iterations: ', self.iter)
 
         
@@ -82,14 +86,14 @@ class PreconditionTestF():
         f_mat = (self.m_mat @ self.m_mat.T).toarray()
         self.iter = 0
         for _ in range(20):
-            cg(f_mat, self.phi, M=self.f_mat_inv.toarray(), callback = self.call_back)
+            cgs(f_mat, self.phi, M=self.f_mat_inv.toarray(), callback = self.call_back)
         print('With preconditioning (dense): ', perf_counter() - tt, '\n# of iterations: ', self.iter)
 
 
 
 np.random.seed(42)
 
-sol_F = PreconditionTestF(10, 4, 2, 9) 
+sol_F = PreconditionTestF(8, 4, .1, 9) 
 sol_F.benchmark()
 
 

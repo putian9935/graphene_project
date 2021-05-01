@@ -39,7 +39,10 @@ class Trajectory():
         self.xi = np.random.randn(N*N*Nt*2)  # the whole purpose of rescaling is to make xi follow gaussian
         self.xis = []
         self.max_epochs = max_epochs
-        self.m_mat_indep = m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,).tocsc()
+        interaction = np.zeros(2*N*N*Nt) 
+        interaction[::2] = .0008
+        interaction[1::2] = +.0008
+        self.m_mat_indep = (m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,)+sparse.diags(interaction)).tocsc()
 
         self.pre_cond = inv(self.m_mat_indep @ self.m_mat_indep.T) # preconditioning matrix, see module precondition_test.py
         
@@ -184,7 +187,8 @@ class Trajectory():
 
             self._generate_phi()
 
-            pi = self.rand_gen()  # random momenta
+            if not epoch % 2:
+                pi = self.rand_gen()  # random momenta
             # print(pi[:10], self.phi[0][:10],self.phi[1][:10])
             # print(self.xi[:10])
             h_start = hamiltonian()  # record the hamiltonian at the beginning
@@ -210,10 +214,11 @@ class Trajectory():
             if h_end < h_start: # exp might overflow
                 self.xis.append(self.xi.copy())  # a copy is necessary
                 continue
-            if np.random.random() > np.exp(-h_end + h_start):
+            if h_end-h_start > 40 or np.random.random() > np.exp(-h_end + h_start):
                 self.xi = prev_xi  
                 Trajectory.rej_updates += 1
-                tmp_ham[-1][0]='rej'
+                tmp_ham[-1][0]='rej'  # rejected
+                tmp_ham[-1][1]=0  # no update of hamiltonian
 
                 # no continue here, save all points as sample
                 # continue

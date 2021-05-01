@@ -96,7 +96,7 @@ def m_matrix_shifted_same4all(Nt, N, hat_t, hat_U):
     for i in range(0, Nt-1):
         buf[i, i+1] = 1
     buf[-1,0] = -1
-    return ret  +sparse.kron(buf,sparse.eye(2*N*N,format='csc')).tocsc() +1*hat_U*sparse.eye(2*N*N*Nt, format='csc')
+    return ret  +sparse.kron(buf,sparse.eye(2*N*N,format='csc')).tocsc() # +1*hat_U*sparse.eye(2*N*N*Nt, format='csc')
 
     
     # print(np.linalg.eig(ret.toarray())[0])
