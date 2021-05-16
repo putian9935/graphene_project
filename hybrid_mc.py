@@ -15,7 +15,7 @@ To do:
 """
 
 import numpy as np 
-from m_matrix import tau_n2ind, m_matrix_shifted_same4all,  m_matrix_same4all, m_matrix_xi, m_matrix_tau_free, ft2d_speedup, m_matrix_tau_shift
+from m_matrix import tau_n2ind, m_matrix_shifted_same4all,  m_matrix_same4all, m_matrix_xi, m_matrix_tau_free, ft2d_speedup, m_matrix_tau_shift, m_matrix_same4all_test_shift
 from scipy.sparse.linalg import spsolve, inv, cg, cgs, gcrotmk, splu, bicg, bicgstab, gmres, lgmres, minres, qmr
 from scipy import sparse
 from tqdm import tqdm
@@ -24,8 +24,8 @@ from tqdm import tqdm
 import pickle 
 
 #np.random.seed(102)  # fix seed for reproductibility 
+m_matrix_same4all = m_matrix_shifted_same4all
 
-# m_matrix_same4all = m_matrix_shifted_same4all
 class Trajectory():
     """
     Save a single trajectory of Markov chain.
@@ -33,16 +33,17 @@ class Trajectory():
     tot_updates = 0 # statistics on rej rate
     rej_updates = 0
     delta_ham = []
-    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400):
+    def __init__(self, Nt, N, hat_t, hat_U, e=0,max_epochs=400, staggered=False):
         self.N, self.Nt, self.half_size = N, Nt, N*N*Nt
         self.hat_t, self.hat_U = hat_t, hat_U
         self.xi = np.random.randn(N*N*Nt*2)  # the whole purpose of rescaling is to make xi follow gaussian
         self.xis = []
         self.max_epochs = max_epochs
-        interaction = np.zeros(2*N*N*Nt) 
-        interaction[::2] = .0008
-        interaction[1::2] = +.0008
-        self.m_mat_indep = (m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,)+sparse.diags(interaction)).tocsc()
+        interaction = np.ones(2*N*N*Nt) * -e
+        if staggered: 
+            interaction[1::2] += e*2. 
+        interaction = sparse.diags(interaction)
+        self.m_mat_indep = (m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,)+interaction).tocsc()
 
         self.pre_cond = inv(self.m_mat_indep @ self.m_mat_indep.T) # preconditioning matrix, see module precondition_test.py
         
@@ -187,8 +188,8 @@ class Trajectory():
 
             self._generate_phi()
 
-            if not epoch % 2:
-                pi = self.rand_gen()  # random momenta
+            # if not epoch % 2:
+            pi = self.rand_gen()  # random momenta
             # print(pi[:10], self.phi[0][:10],self.phi[1][:10])
             # print(self.xi[:10])
             h_start = hamiltonian()  # record the hamiltonian at the beginning
@@ -201,8 +202,7 @@ class Trajectory():
             h_end = hamiltonian()  # record the hamiltonian at the end
             # print(pi[:10], self.phi[0][:10],self.phi[1][:10])
             # print(self.xi[:10])
-            # two components of xi, phi are independent, 
-            # so it's cool to accept one update while rejecting another
+            
             # print(h_start, h_end) 
             # input()
             Trajectory.tot_updates += 1
@@ -229,7 +229,7 @@ class Trajectory():
 
 
 class Solution():  # cannot bear passing same arguments, use class instead
-    def __init__(self, Nt, N, hat_t, hat_U, max_epochs=400, time_step=0.4, from_file=False, filename=None):
+    def __init__(self, Nt, N, hat_t, hat_U, e=0, max_epochs=400, time_step=0.4, from_file=False, filename=None, staggered=False):
         ''' Initialise as is. Results are always pickled for later ease. ''' 
         self.N, self.Nt = N, Nt
         self.hat_t, self.hat_U = hat_t, hat_U 
@@ -244,7 +244,7 @@ class Solution():  # cannot bear passing same arguments, use class instead
             filename = 'N%dNt%dhatt%.2ehatU%.2ets%.2eep%d.pickle'%(N,Nt,hat_t,hat_U,time_step,max_epochs)
         
         if not from_file:
-            self._generate_trajectories(max_epochs, time_step)
+            self._generate_trajectories(e, max_epochs, time_step, staggered)
             # with open(filename, 'wb') as f:
             #     pickle.dump(self.traj, f)
             #     print('hello')
@@ -254,9 +254,9 @@ class Solution():  # cannot bear passing same arguments, use class instead
                 
                 
 
-    def _generate_trajectories(self, max_epochs, time_step):
+    def _generate_trajectories(self, e, max_epochs, time_step, staggered):
         ''' Generate trajectories using HMC ''' 
-        self.traj = Trajectory(self.Nt, self.N, self.hat_t, self.hat_U, max_epochs)
+        self.traj = Trajectory(self.Nt, self.N, self.hat_t, self.hat_U, e,max_epochs, staggered=staggered)
         self.traj.evolve(time_step=time_step)
 
         print('Acceptance Rate:%.2f%%,\nAcc/Tot:  %d/%d' % (100*(Trajectory.tot_updates-Trajectory.rej_updates)/Trajectory.tot_updates,Trajectory.tot_updates-Trajectory.rej_updates,Trajectory.tot_updates))
