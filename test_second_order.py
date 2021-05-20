@@ -15,19 +15,24 @@ To do:
 """
 
 import numpy as np 
-from m_matrix import tau_n2ind, m_matrix_xi, m_matrix_same4all
+from m_matrix import tau_n2ind, m_matrix_xi, m_matrix_same4all, t_matrix_same4all
 
 from scipy.sparse.linalg import spsolve, inv, cg, cgs, gcrotmk, splu, bicg, bicgstab, gmres, lgmres, minres, qmr
 from scipy import sparse
 from tqdm import tqdm
+
+from scipy.linalg import expm
 # from sparse_dot_mkl import sparse_qr_solve_mkl
 # from scikits.umfpack import spsolve
 import pickle 
-from test_second_order import Trajectory
+
 #np.random.seed(102)  # fix seed for reproductibility 
 
 
-class TrajectoryOld():
+
+
+
+class Trajectory():
     """
     Save a single trajectory of Markov chain.
     """
@@ -37,8 +42,11 @@ class TrajectoryOld():
     def __init__(self, Nt, N, hat_t, hat_U, e=0,max_epochs=400, staggered=False):
         self.N, self.Nt, self.half_size = N, Nt, N*N*Nt
         self.hat_t, self.hat_U = hat_t, hat_U
-        if self.N == 1: 
-            self.hat_t /= 3.
+
+        # triple counting if N is small; same problem would arise with N=2
+        if N == 1:  
+            self.hat_t /= 3. 
+
         self.xi = np.random.randn(N*N*Nt*2)  # the whole purpose of rescaling is to make xi follow gaussian
         self.xis = []
         self.max_epochs = max_epochs
@@ -46,8 +54,16 @@ class TrajectoryOld():
         if staggered: 
             interaction[1::2] += e*2. 
         interaction = sparse.diags(interaction)
-        self.m_mat_indep = (m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,)+interaction).tocsc()
 
+        self.t_mat_indep = t_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U).tocsc() + interaction
+        self.m_mat_indep = (m_matrix_same4all(self.Nt, self.N, self.hat_t, self.hat_U,) + interaction
+        - .5 * self.t_mat_indep @ self.t_mat_indep
+        ).tocsc()
+
+        # print(self.t_mat_indep.toarray())
+        # print(-expm(-self.t_mat_indep.toarray())[:2, :2])
+        # print(self.m_mat_indep.toarray()[:2, :2])
+        # input()
         self.pre_cond = inv(self.m_mat_indep @ self.m_mat_indep.T) # preconditioning matrix, see module precondition_test.py
         
         # self.pre_cond = sparse.eye(2*N*N*Nt)
@@ -70,7 +86,10 @@ class TrajectoryOld():
         self.phi = []  # make a list for good iteration
 
         # Few necessary initialization
-        self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
+        d_mat = m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
+        # self.t_mat = self.t_mat_indep + self.d_mat
+
+        self.m_mat = self.m_mat_indep + d_mat - .5*(self.t_mat_indep@d_mat+d_mat@self.t_mat_indep)-.5*d_mat@d_mat 
         self.f_mat = self.m_mat @ self.m_mat.T
 
         # divide by sqrt(2) since eta does not follow standard gaussian 
@@ -133,19 +152,22 @@ class TrajectoryOld():
         
         def force(): 
             ''' calc the force according to eq. (221), with two chiral indices combined '''
-            self.m_mat = self.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
+            d_mat = m_matrix_xi(self.Nt, self.N, self.hat_U, self.xi)
+            eye_minus_t_mat = sparse.eye(2*self.N*self.N*self.Nt)-self.t_mat_indep - d_mat
+            self.m_mat = self.m_mat_indep + d_mat - .5*(self.t_mat_indep@d_mat+d_mat@self.t_mat_indep)-.5*d_mat@d_mat 
             self.f_mat = self.m_mat @ self.m_mat.T
 
             # self._benchmark_solver()  # add benchmark here
 
             self.xs = []
-            ret = -self.xi            
+            ret = -self.xi     
             for phi in self.phi:
                 self.xs.append(self.solver(self.f_mat,phi)[0])
+                y = self.m_mat.T @ self.xs[-1]
                 # can't figure out why need a transpose here, but it worked! 
                 # trace is too fancy, simply an element-wise product 
-                ret += (2 * self.hat_U **.5) * (self.xs[-1] * (self.m_mat.T @ self.xs[-1] )) 
-
+                ret += (self.hat_U **.5) * ((eye_minus_t_mat@y) * self.xs[-1] + (eye_minus_t_mat@self.xs[-1]) * y) 
+                
             return ret
 
 
@@ -452,53 +474,7 @@ def show_single_plot(res):
 if __name__ == '__main__':
     import matplotlib.pyplot as plt 
 
-    sol = Solution(10,3,.2,.6, time_step=0.22, max_epochs=100,)
-
     np.set_printoptions(precision=4,linewidth=120)  # otherwise you will have a bad time debugging code
-    # sol = Solution(50,10,1e-1,1e-3, time_step=0.35, max_epochs=1000)
-    # sol = Solution(50, 5, 2e-3, 1e-7, time_step=0.3, max_epochs=20000) 
-    
-    sol = Solution(50,5,2e-3,1e-7, time_step=0.22, max_epochs=50000, from_file=True)
-    # sol = Solution(50,5,2e-3, 0., time_step=0.22, max_epochs=100, act=40, from_file=False)  # turn off interaction
+   
+    sol = Solution(8,1,.2,.6, e=0, time_step=0.22, max_epochs=100,)
 
-    plt.matshow(np.log(sol.number_correl_aa()))
-    plt.show()
-    input()
-    print(sol.calc_spectra())
-    # act has higher priority 
-    plt.plot(sol.calc_auto_correlation_with_coarsen(lambda _: _@_))
-    plt.ylabel(r'Blocked sample mean $\sigma^2_{O_B}/N_B$')
-    plt.xlabel('Block size $N_B$')
-    # plt.show()
-    plt.savefig('norm_bin.png')
-
-    plt.plot(sol.calc_auto_correlation_with_coarsen(lambda _: _[0]))
-    plt.ylabel(r'Blocked sample mean $\sigma^2_{O_B}/N_B$')
-    plt.xlabel('Block size $N_B$')
-    # plt.show()
-    plt.savefig('norm_first.png')
-
-
-    """    
-    sol.calc_auto_correlation(mapping_func=lambda _: _)
-    plt.figure(figsize=(8,6))
-    plt.plot(sol.acf[:200]) 
-    plt.title(r'Mapping function: lambda _: _')
-    plt.show()
-    # plt.savefig('itself.png')
-    
-    sol.calc_auto_correlation(mapping_func=lambda _: _@_)
-    plt.figure(figsize=(8,6))
-    plt.plot(sol.acf[:200]) 
-    plt.title(r'Mapping function: lambda _: _@_')
-    plt.show()
-    # plt.savefig('norm.png')
-    
-    sol.calc_auto_correlation(mapping_func=lambda _: _[0])
-    plt.figure(figsize=(8,6))
-    plt.plot(sol.acf[:200]) 
-    plt.title(r'Mapping function: lambda _: _[0]')
-    plt.show()
-    # plt.savefig('first_component.png')
-    """
-    

@@ -20,11 +20,15 @@ def my_expm1(m):
 
 class TwoSiteZero(Solution):
     def __init__(self, expm, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.m0 = -expm(np.array([[-kwargs['e'],args[2]],[args[2],-kwargs['e']]]))
         
+        super().__init__(*args, **kwargs)
+        self.m0 = -expm(-np.array([[-kwargs['e'],-args[2]],[-args[2],-kwargs['e']]]))
+        print(np.array([[-kwargs['e'],-args[2]],[-args[2],-kwargs['e']]]))
+        print(self.traj.t_mat_indep.toarray()[:2, :2])
+        input()
         print(self.traj.m_mat_indep.toarray()[:2,:2])
         print(self.m0)
+        print(-my_expm2(-np.array([[-kwargs['e'],-args[2]],[-args[2],-kwargs['e']]])))
         input()
 
     def charge(self, m_inv):
@@ -107,9 +111,10 @@ class TwoSite(Solution):
         # return self.magnetic_moment(m_inv), self.magnetic_moment2(m_inv)
 
         for xi in tqdm(self.traj.xis[burnin:]):
-            m_inv = inv(self.traj.m_mat_indep + m_matrix_xi(self.Nt, self.N, self.hat_U, xi)).toarray()
+            d_mat = m_matrix_xi(self.Nt, self.N, self.hat_U, xi)
+            m_inv = inv(self.traj.m_mat_indep + d_mat - .5*(self.traj.t_mat_indep@d_mat+d_mat@self.traj.t_mat_indep)-.5*d_mat@d_mat).toarray()
 
-            # plt.matshow(m_inv.toarray()) 
+            # plt.matshow(m_inv) 
             # plt.show()
             new_entry = []
             for f in stat_funcs: 
@@ -285,11 +290,11 @@ def plot_zero_t_susceptibility():
         em = beta*hm / Nt
         sol = TwoSite(Nt, 1, beta*t/Nt/3, beta*u/Nt, e=0, time_step=.3, max_epochs=5000, 
             from_file=False,) 
-        m1 = sol.stat(stat_funcs=[sol.magnetic_moment])
+        m1 = sol.stat(stat_funcs=[sol.magnetic_moment2])
         sol = TwoSite(Nt, 1, beta*t/Nt, beta*u/Nt, e=em, time_step=.3, max_epochs=5000, 
             from_file=False,) 
-        m2 = sol.stat(stat_funcs=[sol.magnetic_moment])
-        res.append((m2-m1)/hm) 
+        m2 = sol.stat(stat_funcs=[sol.magnetic_moment2])
+        res.append((m2[0]-m1[0])/hm) 
     res = np.array(res)
     print(res)
     plt.plot(ts, -res, label='HMC')
@@ -309,14 +314,18 @@ def plot_zero_t_susceptibility():
 # exit()
 # plot_zero_U_susceptibility()
 
-Nt = 16
+Nt = 32
 beta = 4 
-t = 0
-u = 5e-2
-h = 0
+t = 0. 
+u = .005
+h = -2e-2
 
-plot_zero_t_susceptibility()
+# plot_zero_t_susceptibility()
 
-sol = TwoSite(Nt,1, beta*t/Nt,beta*u/Nt,e=beta*h/Nt, time_step=0.3, max_epochs=10000, 
+
+sol = TwoSite(Nt,1, beta*t/Nt,beta*u/Nt,e=beta*h/Nt, time_step=0.35, max_epochs=4000, 
                 from_file=False,staggered=False)
-print(sol.stat([sol.magnetic_moment2]))
+
+
+print(sol.stat(stat_funcs=[sol.magnetic_moment2]))
+
