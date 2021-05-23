@@ -71,7 +71,7 @@ class Trajectory():
             self.solver = lambda _, __: cgs(_, __, M=self.pre_cond)  # maybe should use a closure, yet no matter
             # self.solver = lambda _, __: (sparse_qr_solve_mkl(_, __),)
         else: 
-            self.solver = lambda _, __: bicgstab(_, __, M=self.pre_cond) # using bicgstab is mainly an accuracy/efficiency tradeoff
+            self.solver = lambda _, __: bicgstab(_, __,) # using bicgstab is mainly an accuracy/efficiency tradeoff
 
         if self.half_size * 2 < 10000:  # choose random number gen
             self.rand_gen = lambda : np.random.randn(N*N*Nt*2) 

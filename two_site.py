@@ -9,7 +9,7 @@ from scipy.sparse.linalg import inv
 from m_matrix import m_matrix_xi
 from tqdm import tqdm
 import matplotlib.pyplot as plt
-# from scipy.linalg import expm
+from scipy.linalg import expm
 from scipy.linalg import inv as minv
 
 def my_expm2(m):
@@ -19,17 +19,12 @@ def my_expm1(m):
     return np.eye(2) + m # + .5 * m @ m 
 
 class TwoSiteZero(Solution):
-    def __init__(self, expm, *args, **kwargs):
+    def __init__(self, myexpm, *args, **kwargs):
         
         super().__init__(*args, **kwargs)
-        self.m0 = -expm(-np.array([[-kwargs['e'],-args[2]],[-args[2],-kwargs['e']]]))
-        print(np.array([[-kwargs['e'],-args[2]],[-args[2],-kwargs['e']]]))
-        print(self.traj.t_mat_indep.toarray()[:2, :2])
-        input()
-        print(self.traj.m_mat_indep.toarray()[:2,:2])
-        print(self.m0)
-        print(-my_expm2(-np.array([[-kwargs['e'],-args[2]],[-args[2],-kwargs['e']]])))
-        input()
+        self.m0 = -myexpm(-np.array([[-kwargs['e'],-args[2]],[-args[2],-kwargs['e']]]))
+        self.e = kwargs['e']
+
 
     def charge(self, m_inv):
         return 1.-np.mean(m_inv.toarray().diagonal())
@@ -39,14 +34,11 @@ class TwoSiteZero(Solution):
         return -1*np.sum(buf[0,2]*2)-1
     
     def magnetic_moment2(self, m_inv):
-        buf = m_inv# .toarray()
-        
-        # print(1*np.sum(2-(14*buf[2,0]+12*buf[4,0])/26.*2)-1)
         return 1*(2-np.mean(np.diagonal(m_inv, offset=-2))*2)-1
 
     def staggered_magnetic_moment2(self, m_inv):
-        buf = m_inv.toarray()
-        return (buf[2,0]-buf[3,1])*2
+        offset_diagonal = np.diagonal(m_inv, offset=-2)
+        return (np.mean(offset_diagonal[::2])- np.mean(offset_diagonal[::1]))*2
         
 
     def calc_auto_correlation_with_coarsen(self, x):
@@ -70,9 +62,9 @@ class TwoSiteZero(Solution):
         # print(m_inv[2,0])
         # m_inv = minv(m)
         
-        return self.magnetic_moment2(m_inv)
+        # return self.magnetic_moment2(m_inv)
     
-        # return self.staggered_magnetic_moment2(m_inv)
+        return self.staggered_magnetic_moment2(m_inv)
         
 
 class TwoSite(Solution):
@@ -91,9 +83,9 @@ class TwoSite(Solution):
         return 1*(2-np.mean(np.diagonal(m_inv, offset=-2))*2)-1
 
     def staggered_magnetic_moment(self, m_inv):
-        buf = m_inv.toarray().diagonal()
-        return -np.sum(buf[::2]-buf[1::2])/self.Nt
-
+        offset_diagonal = np.diagonal(m_inv, offset=-2)
+        return (np.mean(offset_diagonal[::2])- np.mean(offset_diagonal[::1]))*2
+    
     def calc_auto_correlation_with_coarsen(self, x):
         ''' Coarsening to determine ac time.  ''' 
         from block import linear_blocking
@@ -123,9 +115,14 @@ class TwoSite(Solution):
         
         res = np.array(res)
 
-        # for i in range(len(stat_funcs)):
-        #     plt.plot(self.calc_auto_correlation_with_coarsen(res[:,i]) )
-        #     plt.show()
+        for i in range(len(stat_funcs)):
+            plt.plot(self.calc_auto_correlation_with_coarsen(res[:,i]) )
+            plt.xlabel('$N_B$')
+            plt.ylabel('$\sigma^2$')
+            plt.xlim(left=0)
+            plt.grid()
+            # plt.show()
+            plt.savefig('h%.3e.pdf'%self.e)
         return np.mean(res, axis=0), np.std(res, axis=0) 
 
 
@@ -144,7 +141,6 @@ def plot_zero_tU():
         em = emax / Nt
         
         res = []
-
         for e in np.linspace(-em, em, endpoint=True):
             sol = TwoSiteZero(Nt,1,hat_t, hat_u, e=e, time_step=ts, max_epochs=1, 
                 from_file=False,) 
@@ -172,23 +168,26 @@ def plot_staggered_zero_parameter():
 
     distracting and slows down the program
     '''
-    u, t = 0, 2
+    u, t = 0, 10
 
     ts=.5
 
     emax = 3
-    for Nt in [8, 16, 32]:
+    for Nt in [16,]:
         hat_u = u / Nt 
         hat_t = t / Nt
         em = emax / Nt
         
         res = []
 
-        for e in np.linspace(-em, em, endpoint=True):
-            sol = TwoSiteZero(Nt,1,hat_t, hat_u, e=e, time_step=ts, max_epochs=1, 
+        for e in np.linspace(0, em, endpoint=True):
+            sol = TwoSiteZero(my_expm1,Nt,1,hat_t, hat_u, e=e, time_step=ts, max_epochs=1, 
                 from_file=False,staggered=True) 
 
             res.append(np.array(sol.stat(stat_funcs=[sol.magnetic_moment]))) 
+            
+            print(hat_t*Nt, e*Nt, res[-1])
+            input()
         es = np.linspace(-em, em, endpoint=True) * Nt 
 
         res = np.array(res)
@@ -208,20 +207,26 @@ def plot_zero_U():
     Nt = 16
     data_ed = np.genfromtxt('zeroU.csv', delimiter=',')
 
-    plt.plot(data_ed[:,0]*4, data_ed[:,3], '--', c='C0', label=r'$\beta t=0.2$ (ED)')
-    plt.plot(data_ed[:,0]*4, data_ed[:,2], '--', c='C1', label=r'$\beta t=0.5$ (ED)')
-    plt.plot(data_ed[:,0]*4, data_ed[:,1], '--', c='C2', label=r'$\beta t=1.0$ (ED)')
-    for hat_t in [.2, .5, 1]:
-        em = .2 / Nt
+    # plt.plot(data_ed[:,0]*4, data_ed[:,3], '--', c='C0', label=r'$\beta t=0.2$ (ED)')
+    # plt.plot(data_ed[:,0]*4, data_ed[:,2], '--', c='C1', label=r'$\beta t=0.5$ (ED)')
+    # plt.plot(data_ed[:,0]*4, data_ed[:,1], '--', c='C2', label=r'$\beta t=1.0$ (ED)')
+    for hat_t in [1]:
+        em = 4 / Nt
             
         res = []
+        
+        sol = TwoSiteZero(my_expm1,Nt,1,10/Nt, 0, e=0, time_step=.3, max_epochs=1, 
+                from_file=False,) 
+        print(np.array(sol.stat(stat_funcs=[sol.magnetic_moment])))
+        input()
 
-        for e in np.linspace(0, em, 20, endpoint=True):
-            sol = TwoSiteZero(my_expm2, Nt, 1, hat_t/Nt, 0., e=e, time_step=.5, max_epochs=1, 
+        es = np.linspace(-em, em, 50, endpoint=True) * Nt 
+        for e in es:
+            sol = TwoSiteZero(my_expm2, Nt, 1, 4*hat_t/Nt, 0., e=4*e/Nt, time_step=.5, max_epochs=1, 
                 from_file=False,) 
 
             res.append(np.array(sol.stat(stat_funcs=[sol.magnetic_moment]))) 
-        es = np.linspace(0, em, 20, endpoint=True) * Nt 
+        
 
         res = np.array(res)
         # plt.plot(es, res[:,0], label=r'$N_t=%d$'%Nt)
@@ -310,8 +315,9 @@ def plot_zero_t_susceptibility():
 
 # plot_staggered_zero_parameter()
 
-# plot_zero_U()
-# exit()
+# plot_zero_tU()
+plot_zero_U()
+exit()
 # plot_zero_U_susceptibility()
 
 Nt = 32
@@ -323,7 +329,7 @@ h = -2e-2
 # plot_zero_t_susceptibility()
 
 
-sol = TwoSite(Nt,1, beta*t/Nt,beta*u/Nt,e=beta*h/Nt, time_step=0.35, max_epochs=4000, 
+sol = TwoSite(Nt,1, beta*t/Nt,beta*u/Nt,e=beta*h/Nt, time_step=0.35, max_epochs=400, 
                 from_file=False,staggered=False)
 
 
